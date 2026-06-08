@@ -416,8 +416,8 @@ export default function Analytics() {
                     width={55}
                   />
                   <Tooltip
-                    formatter={(v: number) => [`${v.toLocaleString('fr-FR')} DH`, 'CA']}
-                    labelFormatter={(l: string) => new Date(l + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}
+                    formatter={((v: number) => [`${v.toLocaleString('fr-FR')} DH`, 'CA']) as any}
+                    labelFormatter={((l: string) => new Date(l + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })) as any}
                     contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
                   />
                   <Line
@@ -459,7 +459,7 @@ export default function Analytics() {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(v: number, name: string) => [v, STATUS_LABELS[name] || name]}
+                      formatter={((v: number, name: string) => [v, STATUS_LABELS[name] || name]) as any}
                       contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
                     />
                   </PieChart>
@@ -497,7 +497,7 @@ export default function Analytics() {
                   <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} interval={4} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
                   <Tooltip
-                    formatter={(v: number, name: string) => [v, name === 'thisMonth' ? 'Ce mois' : 'Mois préc.']}
+                    formatter={((v: number, name: string) => [v, name === 'thisMonth' ? 'Ce mois' : 'Mois préc.']) as any}
                     labelFormatter={(l) => `Jour ${l}`}
                     contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
                   />
@@ -526,7 +526,7 @@ export default function Analytics() {
                   <XAxis dataKey="week" tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={(v) => `${v}%`} axisLine={false} tickLine={false} />
                   <Tooltip
-                    formatter={(v: number) => [`${v}%`, 'Taux de confirmation']}
+                    formatter={((v: number) => [`${v}%`, 'Taux de confirmation']) as any}
                     contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
                   />
                   <Line

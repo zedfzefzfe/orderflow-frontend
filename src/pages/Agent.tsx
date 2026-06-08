@@ -104,7 +104,7 @@ export default function Agent() {
   const [loadingSummary, setLoadingSummary] = useState(false)
   const [loadingAudio, setLoadingAudio] = useState(false)
   const [speaking, setSpeaking] = useState(false)
-  const [isDone, setIsDone] = useState(false)
+  const [_isDone, setIsDone] = useState(false)
 
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [loadingAlerts, setLoadingAlerts] = useState(true)

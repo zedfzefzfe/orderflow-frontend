@@ -472,7 +472,7 @@ function TableHead({ showActions = false, selectable = false, allSelected = fals
 
 // ── Inline delete confirmation row ───────────────────────────────────────────
 
-function DeleteConfirmRow({ order, stripColor, onConfirm, onCancel }: {
+function DeleteConfirmRow({ order, stripColor: _stripColor, onConfirm, onCancel }: {
   order: Order; stripColor: string; onConfirm: () => void; onCancel: () => void
 }) {
   return (

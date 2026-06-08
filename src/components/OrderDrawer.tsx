@@ -1,6 +1,6 @@
 import { X, Phone, MapPin, Package, Hash, Calendar, DollarSign, MessageSquare } from 'lucide-react'
 import { formatDateFr, formatPhone, timeAgo } from '@/lib/dateUtils'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 
 export interface Order {
