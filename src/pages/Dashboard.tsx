@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import jsPDF from 'jspdf'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
@@ -623,6 +623,7 @@ function OrderRow({ order, index, stripColor, onRowClick, onStatusChange: _onSta
   statusExpanded?: boolean
   onToggleStatusExpand?: () => void
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const URGENCY_ROW_BG: Record<number, string> = { 0: 'bg-red-50/30', 1: 'bg-orange-50/30', 2: 'bg-yellow-50/30', 3: 'bg-amber-50/30' }
   const rowBg = urgency
     ? (URGENCY_ROW_BG[urgency.diffDays] ?? (index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'))
@@ -783,28 +784,22 @@ function OrderRow({ order, index, stripColor, onRowClick, onStatusChange: _onSta
       {/* Status + contextual action buttons */}
       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-col gap-1.5">
-          {order.status === 'CONFIRMED' ? (
-            <button className="text-left" onClick={() => onToggleStatusExpand?.()}>
+          {(order.status === 'CONFIRMED' || order.status === 'LIVRE') && editable ? (
+            <button ref={triggerRef} className="text-left" onClick={() => onToggleStatusExpand?.()}>
               <StatusPill status={order.status} />
             </button>
           ) : (
             <StatusPill status={order.status} />
           )}
-          {editable && order.status === 'CONFIRMED' && statusExpanded && (
-            <div className="flex flex-wrap gap-1">
-              <button
-                onClick={() => { onToggleStatusExpand?.(); onMarkLivre?.() }}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors whitespace-nowrap"
-              >
-                ✅ Livré ✓
-              </button>
-              <button
-                onClick={() => { onToggleStatusExpand?.(); onMarkRetourne?.() }}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors whitespace-nowrap"
-              >
-                ↩️ Retourné
-              </button>
-            </div>
+          {editable && statusExpanded && (
+            <StatusDropdown
+              triggerRef={triggerRef}
+              showLivre={order.status !== 'LIVRE'}
+              showLivreur={order.status === 'CONFIRMED'}
+              onLivre={order.status !== 'LIVRE' ? () => { onToggleStatusExpand?.(); onMarkLivre?.() } : undefined}
+              onRetourne={() => { onToggleStatusExpand?.(); onMarkRetourne?.() }}
+              onLivreur={order.status === 'CONFIRMED' ? () => { onToggleStatusExpand?.(); onSendToLivreur?.() } : undefined}
+            />
           )}
           {editable && order.status === 'CONFIRMED' && (
             <div className="flex flex-wrap gap-1">
@@ -863,6 +858,70 @@ function OrderRow({ order, index, stripColor, onRowClick, onStatusChange: _onSta
         </td>
       )}
     </tr>
+  )
+}
+
+// ── StatusDropdown ────────────────────────────────────────────────────────────
+
+function StatusDropdown({
+  triggerRef,
+  showLivre,
+  showLivreur,
+  onLivre,
+  onRetourne,
+  onLivreur,
+}: {
+  triggerRef: { current: HTMLButtonElement | null }
+  showLivre: boolean
+  showLivreur: boolean
+  onLivre?: () => void
+  onRetourne: () => void
+  onLivreur?: () => void
+}) {
+  const [style, setStyle] = useState<React.CSSProperties>({ position: 'fixed', visibility: 'hidden', zIndex: 9999 })
+
+  useEffect(() => {
+    const el = triggerRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const above = window.innerHeight - rect.bottom < 200
+    setStyle({
+      position: 'fixed',
+      left: rect.left,
+      minWidth: 200,
+      zIndex: 9999,
+      ...(above ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
+    })
+  }, [])
+
+  return (
+    <div style={style} className="bg-white rounded-xl shadow-xl border border-gray-100 p-3 flex flex-col gap-1.5">
+      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-1 pb-0.5">
+        Changer le statut
+      </p>
+      {showLivre && (
+        <button
+          onClick={onLivre}
+          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors text-left"
+        >
+          ✅ Livré
+        </button>
+      )}
+      <button
+        onClick={onRetourne}
+        className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors text-left"
+      >
+        ↩️ Retourné
+      </button>
+      {showLivreur && (
+        <button
+          onClick={onLivreur}
+          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm font-medium bg-orange-50 text-orange-600 hover:bg-orange-100 transition-colors text-left"
+        >
+          🚚 Envoyer livreur
+        </button>
+      )}
+    </div>
   )
 }
 
