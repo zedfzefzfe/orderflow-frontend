@@ -258,6 +258,55 @@ function StatCard({ label, value, icon: Icon, subtext, borderClass, iconBg, icon
   )
 }
 
+// ── KPI Drawer ────────────────────────────────────────────────────────────────
+
+function KpiDrawer({ data, onClose }: { data: { title: string; orders: Order[] } | null; onClose: () => void }) {
+  if (!data) return null
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
+      <div className="fixed right-0 top-0 h-full w-full max-w-sm bg-white z-50 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+          <div>
+            <h2 className="font-semibold text-gray-900 text-base">{data.title}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{data.orders.length} commande{data.orders.length !== 1 ? 's' : ''}</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
+            <X className="h-5 w-5 text-gray-500" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+          {data.orders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 text-gray-400">
+              <Package className="h-8 w-8 mb-2 opacity-40" />
+              <p className="text-sm">Aucune commande</p>
+            </div>
+          ) : data.orders.map((order) => {
+            const cod = (order.totalPrice ?? 0) + (order.deliveryPrice ?? 0)
+            return (
+              <div key={order.id} className="px-5 py-3.5 hover:bg-gray-50 transition-colors">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm text-gray-900 truncate">{order.customerName}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{formatPhone(order.customerPhone)}</p>
+                  </div>
+                  {cod > 0 && (
+                    <span className="text-sm font-semibold text-emerald-700 shrink-0 tabular-nums">
+                      {cod.toLocaleString('fr-FR')} DH
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-600 mt-1.5 truncate">{order.product}</p>
+                <p className="text-xs text-gray-400 mt-1">{timeAgo(order.createdAt)}</p>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Mobile order card ─────────────────────────────────────────────────────────
 
 function OrderCard({ order, onClick, urgency }: {
@@ -1526,8 +1575,7 @@ export default function Dashboard() {
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   )
-  const [kpiFilter, setKpiFilter] = useState<'NEEDS_REVIEW' | 'EN_ATTENTE' | null>(null)
-  const [activeKpiCard, setActiveKpiCard] = useState<string | null>(null)
+  const [kpiDrawer, setKpiDrawer] = useState<{ title: string; orders: Order[] } | null>(null)
 
   // ── Voice order state ────────────────────────────────────────────────────────
   type VoiceStep = 'idle' | 'recording' | 'processing' | 'review' | 'form'
@@ -2020,10 +2068,8 @@ export default function Dashboard() {
         }
       })
     }
-    if (kpiFilter === 'NEEDS_REVIEW') return result.filter(o => o.needsReview)
-    if (kpiFilter === 'EN_ATTENTE') return result.filter(o => o.status === 'CONFIRMED' || o.status === 'EN_LIVRAISON')
     return result
-  }, [orders, isFiltering, filterByField, dateFrom, dateTo, kpiFilter])
+  }, [orders, isFiltering, filterByField, dateFrom, dateTo])
 
   // ── Derive sections ─────────────────────────────────────────────────────────
 
@@ -2155,7 +2201,7 @@ export default function Dashboard() {
               borderClass={KPI_BORDER.total}
               iconBg="bg-gray-100"
               iconColor="text-gray-500"
-              onClick={() => { setStatusFilter('ALL'); setKpiFilter(null); setActiveKpiCard(null) }}
+              onClick={() => setKpiDrawer({ title: 'Toutes les commandes', orders })}
             />
             <StatCard
               label="À vérifier"
@@ -2165,11 +2211,7 @@ export default function Dashboard() {
               borderClass={KPI_BORDER.needsReview}
               iconBg="bg-yellow-50"
               iconColor="text-yellow-500"
-              active={activeKpiCard === 'needsReview'}
-              onClick={() => {
-                if (activeKpiCard === 'needsReview') { setActiveKpiCard(null); setStatusFilter('ALL'); setKpiFilter(null) }
-                else { setActiveKpiCard('needsReview'); setStatusFilter('ALL'); setKpiFilter('NEEDS_REVIEW') }
-              }}
+              onClick={() => setKpiDrawer({ title: 'Commandes à vérifier', orders: orders.filter(o => o.needsReview) })}
             />
             <StatCard
               label="Confirmées"
@@ -2179,11 +2221,7 @@ export default function Dashboard() {
               borderClass={KPI_BORDER.confirmed}
               iconBg="bg-blue-50"
               iconColor="text-blue-500"
-              active={activeKpiCard === 'confirmed'}
-              onClick={() => {
-                if (activeKpiCard === 'confirmed') { setActiveKpiCard(null); setStatusFilter('ALL'); setKpiFilter(null) }
-                else { setActiveKpiCard('confirmed'); setStatusFilter('CONFIRMED'); setKpiFilter(null) }
-              }}
+              onClick={() => setKpiDrawer({ title: 'Commandes confirmées', orders: orders.filter(o => o.status === 'CONFIRMED') })}
             />
             <StatCard
               label="Livrées"
@@ -2193,11 +2231,7 @@ export default function Dashboard() {
               borderClass={KPI_BORDER.delivered}
               iconBg="bg-emerald-950/10"
               iconColor="text-emerald-900"
-              active={activeKpiCard === 'livrees'}
-              onClick={() => {
-                if (activeKpiCard === 'livrees') { setActiveKpiCard(null); setStatusFilter('ALL'); setKpiFilter(null) }
-                else { setActiveKpiCard('livrees'); setStatusFilter('LIVRE'); setKpiFilter(null) }
-              }}
+              onClick={() => setKpiDrawer({ title: 'Commandes livrées', orders: orders.filter(o => o.status === 'LIVRE' || o.status === 'DELIVERED') })}
             />
           </div>
         </div>
@@ -2305,11 +2339,8 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 gap-4">
           {/* CA Encaissé */}
           <button
-            className={`bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-5 shadow-lg text-white text-left hover:shadow-xl transition-all duration-150${activeKpiCard === 'caEncaisse' ? ' ring-2 ring-white ring-offset-2 ring-offset-emerald-600' : ''}`}
-            onClick={() => {
-              if (activeKpiCard === 'caEncaisse') { setActiveKpiCard(null); setStatusFilter('ALL'); setKpiFilter(null) }
-              else { setActiveKpiCard('caEncaisse'); setStatusFilter('LIVRE'); setKpiFilter(null) }
-            }}
+            className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-5 shadow-lg text-white text-left hover:shadow-xl transition-all duration-150"
+            onClick={() => setKpiDrawer({ title: 'CA Encaissé — commandes livrées', orders: orders.filter(o => o.status === 'LIVRE' || o.status === 'DELIVERED') })}
           >
             <p className="text-emerald-100 text-xs font-semibold uppercase tracking-wider">💰 CA Encaissé</p>
             <p className="text-3xl font-bold mt-2 tabular-nums">
@@ -2325,11 +2356,8 @@ export default function Dashboard() {
 
           {/* CA En Attente — cliquable */}
           <button
-            className={`bg-white border-2 rounded-2xl p-5 shadow-sm text-left hover:shadow-md transition-all duration-150${activeKpiCard === 'enAttente' ? ' border-emerald-400 ring-2 ring-emerald-400 ring-offset-1' : ' border-amber-200 hover:border-amber-300'}`}
-            onClick={() => {
-              if (activeKpiCard === 'enAttente') { setActiveKpiCard(null); setStatusFilter('ALL'); setKpiFilter(null) }
-              else { setActiveKpiCard('enAttente'); setStatusFilter('ALL'); setKpiFilter('EN_ATTENTE') }
-            }}
+            className="bg-white border-2 border-amber-200 rounded-2xl p-5 shadow-sm text-left hover:border-amber-300 hover:shadow-md transition-all duration-150"
+            onClick={() => setKpiDrawer({ title: 'Commandes en attente', orders: orders.filter(o => o.status === 'CONFIRMED' || o.status === 'EN_LIVRAISON') })}
           >
             <p className="text-amber-600 text-xs font-semibold uppercase tracking-wider">⏳ En Attente</p>
             <p className="text-3xl font-bold mt-2 text-gray-900 tabular-nums">
@@ -2680,6 +2708,8 @@ export default function Dashboard() {
           onClose={() => setSelectedClient(null)}
         />
       )}
+
+      <KpiDrawer data={kpiDrawer} onClose={() => setKpiDrawer(null)} />
 
       {cloturerOpen && (
         <CloturerModal
