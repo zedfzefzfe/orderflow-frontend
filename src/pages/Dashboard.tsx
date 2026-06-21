@@ -810,7 +810,7 @@ function OrderRow({ order, index, stripColor, onRowClick, onStatusChange: _onSta
                 onClick={onMarkRetourne}
                 className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors whitespace-nowrap"
               >
-                ↩️ Retourné
+                ↩️ Retourné / Annulé
               </button>
             </div>
           )}
@@ -839,6 +839,111 @@ function OrderRow({ order, index, stripColor, onRowClick, onStatusChange: _onSta
         </td>
       )}
     </tr>
+  )
+}
+
+// ── ReturnReasonModal ─────────────────────────────────────────────────────────
+
+const RETURN_REASONS: { value: string; label: string }[] = [
+  { value: 'INJOIGNABLE',            label: 'Injoignable' },
+  { value: 'REFUSE_LIVRAISON',       label: 'Refuse la livraison' },
+  { value: 'FAUSSE_COMMANDE',        label: 'Fausse commande' },
+  { value: 'ANNULE_AVANT_LIVRAISON', label: 'Annulé avant livraison' },
+  { value: 'REPORTE_CLIENT',         label: 'Reporté par client' },
+  { value: 'MAUVAISE_ADRESSE',       label: 'Mauvaise adresse' },
+  { value: 'PROBLEME_PRODUIT',       label: 'Problème produit' },
+  { value: 'AUTRE',                  label: 'Autre' },
+]
+
+function ReturnReasonModal({
+  order,
+  onConfirm,
+  onClose,
+}: {
+  order: Order
+  onConfirm: (status: 'RETOURNE' | 'ANNULE', reason: string) => void
+  onClose: () => void
+}) {
+  const [status, setStatus] = useState<'RETOURNE' | 'ANNULE'>('RETOURNE')
+  const [reason, setReason] = useState<string | null>(null)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 flex flex-col gap-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900 text-base">Retour / Annulation</h3>
+          <button onClick={onClose} className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <p className="text-sm text-gray-500 -mt-1">
+          Commande de <span className="font-medium text-gray-800">{order.customerName}</span>
+        </p>
+
+        {/* Status toggle */}
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Type</p>
+          <div className="flex gap-2">
+            {(['RETOURNE', 'ANNULE'] as const).map(s => (
+              <button
+                key={s}
+                onClick={() => setStatus(s)}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                  status === s
+                    ? s === 'RETOURNE'
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-gray-500 text-white border-gray-500'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {s === 'RETOURNE' ? '↩️ Retourné' : '✖️ Annulé'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Reason chips */}
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Raison <span className="text-red-400">*</span></p>
+          <div className="flex flex-wrap gap-1.5">
+            {RETURN_REASONS.map(r => (
+              <button
+                key={r.value}
+                onClick={() => setReason(r.value)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+                  reason === r.value
+                    ? 'bg-red-500 text-white border-red-500'
+                    : 'border-gray-200 text-gray-600 hover:border-red-200 hover:text-red-600'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={() => reason && onConfirm(status, reason)}
+            disabled={!reason}
+            className="flex-1 py-2 rounded-xl text-sm font-semibold bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Confirmer
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1322,6 +1427,7 @@ export default function Dashboard() {
   const [cloturerOpen, setCloturerOpen] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [returnReasonOrder, setReturnReasonOrder] = useState<Order | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [selectedClient, setSelectedClient] = useState<{ phone: string; name: string } | null>(null)
   const [vapidPublicKey, setVapidPublicKey] = useState('')
@@ -1557,7 +1663,7 @@ export default function Dashboard() {
     try { audioRef.current?.play() } catch { /* audio blocked */ }
 
     try {
-      await apiPatch(`/api/orders/${order.id}`, { status: 'LIVRE' })
+      await apiPatch(`/api/orders/${order.id}/status`, { status: 'LIVRE' })
       fetchStats(period)
     } catch {
       showToast('Erreur lors de la mise à jour', false)
@@ -1566,11 +1672,16 @@ export default function Dashboard() {
     }
   }
 
-  const handleMarkRetourne = async (order: Order) => {
+  const handleMarkRetourne = (order: Order) => {
+    setReturnReasonOrder(order)
+  }
+
+  const handleConfirmRetour = async (order: Order, status: 'RETOURNE' | 'ANNULE', reason: string) => {
+    setReturnReasonOrder(null)
     const orderCOD = (order.totalPrice ?? 0) + (order.deliveryPrice ?? 0)
 
-    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'RETOURNE' as const } : o))
-    if (selectedOrder?.id === order.id) setSelectedOrder(p => p ? { ...p, status: 'RETOURNE' as const } : null)
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: status as Order['status'] } : o))
+    if (selectedOrder?.id === order.id) setSelectedOrder(p => p ? { ...p, status: status as Order['status'] } : null)
     setCashflow(prev => prev ? {
       ...prev,
       enAttente: Math.max(0, prev.enAttente - orderCOD),
@@ -1578,7 +1689,7 @@ export default function Dashboard() {
     } : null)
 
     try {
-      await apiPatch(`/api/orders/${order.id}`, { status: 'RETOURNE' })
+      await apiPatch(`/api/orders/${order.id}/status`, { status, returnReason: reason })
       fetchStats(period)
     } catch {
       showToast('Erreur lors de la mise à jour', false)
@@ -2309,8 +2420,16 @@ export default function Dashboard() {
           onMarkEnLivraison={() => {
             const o = livreurOrder
             setOrders(prev => prev.map(x => x.id === o.id ? { ...x, status: 'EN_LIVRAISON' as const } : x))
-            apiPatch(`/api/orders/${o.id}`, { status: 'EN_LIVRAISON' }).catch(() => {})
+            apiPatch(`/api/orders/${o.id}/status`, { status: 'EN_LIVRAISON' }).catch(() => {})
           }}
+        />
+      )}
+
+      {returnReasonOrder && (
+        <ReturnReasonModal
+          order={returnReasonOrder}
+          onConfirm={(status, reason) => handleConfirmRetour(returnReasonOrder, status, reason)}
+          onClose={() => setReturnReasonOrder(null)}
         />
       )}
 
