@@ -2176,24 +2176,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Date range filter ── */}
-        <div className="space-y-2">
-          <div className="flex gap-2 flex-wrap">
-            {([
-              { label: "Aujourd'hui", days: 0 },
-              { label: '7 derniers jours', days: 7 },
-              { label: '30 derniers jours', days: 30 },
-              { label: 'Ce mois', days: 'month' },
-            ] as { label: string; days: number | string }[]).map(({ label, days }) => (
-              <button
-                key={label}
-                onClick={() => applyQuickFilter(days)}
-                className="text-xs text-gray-500 hover:text-green-600 hover:bg-green-50 px-2 py-1 rounded-md transition-colors"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
+        <div>
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex gap-1 text-xs">
               <button
