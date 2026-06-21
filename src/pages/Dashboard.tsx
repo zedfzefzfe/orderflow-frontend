@@ -595,7 +595,7 @@ function EditRowInline({ draft, onChange, onSave, onCancel, hasCheckbox }: {
 
 // ── Desktop order row ─────────────────────────────────────────────────────────
 
-function OrderRow({ order, index, stripColor, onRowClick, onStatusChange: _onStatusChange, urgency, editable, onRowEditStart, onDeleteRequest, onSendToLivreur, onPrintLabel, selectable, selected, hasAnySelected, onToggleSelect, editingDeliveryId, editDeliveryValue, onDeliveryEditStart, onDeliveryEditChange, onDeliveryEditSave, onDeliveryEditCancel, onClientClick, onMarkLivre, onMarkRetourne }: {
+function OrderRow({ order, index, stripColor, onRowClick, onStatusChange: _onStatusChange, urgency, editable, onRowEditStart, onDeleteRequest, onSendToLivreur, onPrintLabel, selectable, selected, hasAnySelected, onToggleSelect, editingDeliveryId, editDeliveryValue, onDeliveryEditStart, onDeliveryEditChange, onDeliveryEditSave, onDeliveryEditCancel, onClientClick, onMarkLivre, onMarkRetourne, statusExpanded, onToggleStatusExpand }: {
   order: Order
   index: number
   stripColor: string
