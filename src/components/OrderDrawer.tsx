@@ -21,6 +21,7 @@ export interface Order {
   source: string
   createdAt: string
   clientWarning?: string | null
+  localWarning?: string | null
 }
 
 export const STATUS_COLORS: Record<string, string> = {

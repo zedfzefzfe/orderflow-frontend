@@ -729,12 +729,22 @@ function OrderRow({ order, index, stripColor, onRowClick, onStatusChange: _onSta
             </span>
           )}
           {order.clientWarning && (
-            <span className="group/warn relative shrink-0">
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium border bg-red-50 text-red-600 border-red-300 cursor-default">
-                ⚠️ Client à risque
+            <span className="group/warnnet relative shrink-0">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium border bg-red-900/10 text-red-700 border-red-400 cursor-default">
+                🔴 Danger réseau
               </span>
-              <span className="pointer-events-none absolute bottom-full left-0 mb-1.5 z-50 hidden group-hover/warn:block w-64 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg leading-relaxed">
+              <span className="pointer-events-none absolute bottom-full left-0 mb-1.5 z-50 hidden group-hover/warnnet:block w-72 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg leading-relaxed">
                 {order.clientWarning}
+              </span>
+            </span>
+          )}
+          {order.localWarning && (
+            <span className="group/warnloc relative shrink-0">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium border bg-amber-50 text-amber-700 border-amber-300 cursor-default">
+                🟡 Historique local
+              </span>
+              <span className="pointer-events-none absolute bottom-full left-0 mb-1.5 z-50 hidden group-hover/warnloc:block w-72 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg leading-relaxed">
+                {order.localWarning}
               </span>
             </span>
           )}
