@@ -1842,8 +1842,9 @@ export default function Dashboard() {
     try {
       await apiPatch(`/api/orders/${order.id}/status`, { status, returnReason: reason })
       fetchStats(period)
-    } catch {
-      showToast('Erreur lors de la mise à jour', false)
+    } catch (err) {
+      const serverMsg = (() => { try { return JSON.parse((err as Error).message)?.error } catch { return null } })()
+      showToast(serverMsg || 'Erreur lors de la mise à jour', false)
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: order.status } : o))
       fetchCashflow()
     }
