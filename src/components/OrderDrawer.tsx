@@ -15,22 +15,32 @@ export interface Order {
   totalPrice: number | null
   deliveryPrice: number | null
   needsReview: boolean
-  status: 'CONFIRMED' | 'DELIVERED' | 'CANCELLED'
+  status: 'CONFIRMED' | 'EN_LIVRAISON' | 'LIVRE' | 'RETOURNE' | 'ANNULE' | 'DELIVERED' | 'CANCELLED'
+  deliveredAt?: string | null
   rawMessage: string
   source: string
   createdAt: string
+  clientWarning?: string | null
 }
 
 export const STATUS_COLORS: Record<string, string> = {
-  CONFIRMED: 'bg-blue-100 text-blue-800 border-blue-200',
-  DELIVERED: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  CANCELLED: 'bg-red-100 text-red-800 border-red-200',
+  CONFIRMED:    'bg-blue-100 text-blue-800 border-blue-200',
+  EN_LIVRAISON: 'bg-amber-100 text-amber-800 border-amber-200',
+  LIVRE:        'bg-emerald-100 text-emerald-800 border-emerald-200',
+  RETOURNE:     'bg-red-100 text-red-800 border-red-200',
+  ANNULE:       'bg-gray-100 text-gray-600 border-gray-200',
+  DELIVERED:    'bg-emerald-100 text-emerald-800 border-emerald-200',
+  CANCELLED:    'bg-gray-100 text-gray-600 border-gray-200',
 }
 
 export const STATUS_LABELS: Record<string, string> = {
-  CONFIRMED: 'Confirmé',
-  DELIVERED: 'Livré',
-  CANCELLED: 'Annulé',
+  CONFIRMED:    'Confirmé',
+  EN_LIVRAISON: 'En livraison',
+  LIVRE:        'Livré ✓',
+  RETOURNE:     'Retourné',
+  ANNULE:       'Annulé',
+  DELIVERED:    'Livré',
+  CANCELLED:    'Annulé',
 }
 
 interface OrderDrawerProps {

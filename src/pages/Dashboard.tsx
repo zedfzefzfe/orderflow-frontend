@@ -728,6 +728,16 @@ function OrderRow({ order, index, stripColor, onRowClick, onStatusChange: _onSta
               <TriangleAlert className="h-3 w-3" /> À vérifier
             </span>
           )}
+          {order.clientWarning && (
+            <span className="group/warn relative shrink-0">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium border bg-red-50 text-red-600 border-red-300 cursor-default">
+                ⚠️ Client à risque
+              </span>
+              <span className="pointer-events-none absolute bottom-full left-0 mb-1.5 z-50 hidden group-hover/warn:block w-64 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg leading-relaxed">
+                {order.clientWarning}
+              </span>
+            </span>
+          )}
         </div>
         <span className="text-xs text-gray-400 mt-0.5 block">{timeAgo(order.createdAt)}</span>
       </td>
