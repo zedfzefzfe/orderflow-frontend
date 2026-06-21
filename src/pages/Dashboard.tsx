@@ -620,6 +620,8 @@ function OrderRow({ order, index, stripColor, onRowClick, onStatusChange: _onSta
   onClientClick?: (phone: string, name: string) => void
   onMarkLivre?: () => void
   onMarkRetourne?: () => void
+  statusExpanded?: boolean
+  onToggleStatusExpand?: () => void
 }) {
   const URGENCY_ROW_BG: Record<number, string> = { 0: 'bg-red-50/30', 1: 'bg-orange-50/30', 2: 'bg-yellow-50/30', 3: 'bg-amber-50/30' }
   const rowBg = urgency
@@ -781,7 +783,29 @@ function OrderRow({ order, index, stripColor, onRowClick, onStatusChange: _onSta
       {/* Status + contextual action buttons */}
       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-col gap-1.5">
-          <StatusPill status={order.status} />
+          {order.status === 'CONFIRMED' ? (
+            <button className="text-left" onClick={() => onToggleStatusExpand?.()}>
+              <StatusPill status={order.status} />
+            </button>
+          ) : (
+            <StatusPill status={order.status} />
+          )}
+          {editable && order.status === 'CONFIRMED' && statusExpanded && (
+            <div className="flex flex-wrap gap-1">
+              <button
+                onClick={() => { onToggleStatusExpand?.(); onMarkLivre?.() }}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors whitespace-nowrap"
+              >
+                ✅ Livré ✓
+              </button>
+              <button
+                onClick={() => { onToggleStatusExpand?.(); onMarkRetourne?.() }}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors whitespace-nowrap"
+              >
+                ↩️ Retourné
+              </button>
+            </div>
+          )}
           {editable && order.status === 'CONFIRMED' && (
             <div className="flex flex-wrap gap-1">
               <button
@@ -1428,6 +1452,7 @@ export default function Dashboard() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [returnReasonOrder, setReturnReasonOrder] = useState<Order | null>(null)
+  const [expandedStatusId, setExpandedStatusId] = useState<string | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [selectedClient, setSelectedClient] = useState<{ phone: string; name: string } | null>(null)
   const [vapidPublicKey, setVapidPublicKey] = useState('')
@@ -1615,6 +1640,13 @@ export default function Dashboard() {
       if (d?.vapidPublicKey) setVapidPublicKey(d.vapidPublicKey)
     }).catch(() => {})
   }, [])
+  // Close expanded status badge on any outside click
+  useEffect(() => {
+    const close = () => setExpandedStatusId(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [])
+
   // Period change
   useEffect(() => { fetchOrders(search, statusFilter, period); fetchStats(period) }, [period])
   // Status filter change
@@ -2334,6 +2366,8 @@ export default function Dashboard() {
                                 onClientClick={(phone, name) => setSelectedClient({ phone, name })}
                                 onMarkLivre={() => handleMarkLivre(order)}
                                 onMarkRetourne={() => handleMarkRetourne(order)}
+                                statusExpanded={expandedStatusId === order.id}
+                                onToggleStatusExpand={() => setExpandedStatusId(id => id === order.id ? null : order.id)}
                                 {...rowProps}
                               />
                             )
@@ -2389,6 +2423,8 @@ export default function Dashboard() {
                                 onClientClick={(phone, name) => setSelectedClient({ phone, name })}
                                 onMarkLivre={() => handleMarkLivre(order)}
                                 onMarkRetourne={() => handleMarkRetourne(order)}
+                                statusExpanded={expandedStatusId === order.id}
+                                onToggleStatusExpand={() => setExpandedStatusId(id => id === order.id ? null : order.id)}
                                 {...rowProps}
                               />
                             )
