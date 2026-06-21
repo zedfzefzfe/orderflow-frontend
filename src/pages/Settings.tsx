@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Store, MessageSquare, AlertTriangle, Check, X } from 'lucide-react'
+import { Store, MessageSquare, AlertTriangle, Check, X, Building2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { apiGet, apiPatch } from '@/lib/api'
 
@@ -43,9 +43,16 @@ export default function Settings() {
 
   // Section 1 — Profil
   const [boutiqueName, setBoutiqueName] = useState('')
+  const [email, setEmail] = useState('')
+  const [weeklyReportEnabled, setWeeklyReportEnabled] = useState(true)
   const [savingProfil, setSavingProfil] = useState(false)
 
-  // Section 2 — WhatsApp
+  // Section 2 — Informations boutique
+  const [sector, setSector] = useState('')
+  const [defaultDeliveryCompany, setDefaultDeliveryCompany] = useState('')
+  const [savingBoutique, setSavingBoutique] = useState(false)
+
+  // Section 3 — WhatsApp
   const [notifyPhone, setNotifyPhone] = useState('')
   const [wabaPhone, setWabaPhone] = useState('')
   const [savingWA, setSavingWA] = useState(false)
@@ -53,6 +60,10 @@ export default function Settings() {
   useEffect(() => {
     apiGet('/api/business/me').then((d) => {
       if (d?.name) setBoutiqueName(d.name)
+      if (d?.email) setEmail(d.email)
+      if (d?.weeklyReportEnabled !== undefined) setWeeklyReportEnabled(d.weeklyReportEnabled)
+      if (d?.sector) setSector(d.sector)
+      if (d?.defaultDeliveryCompany) setDefaultDeliveryCompany(d.defaultDeliveryCompany)
       if (d?.ownerNotifyPhone) setNotifyPhone(d.ownerNotifyPhone)
       if (d?.whatsappPhoneNumberId) setWabaPhone(d.whatsappPhoneNumberId)
     }).catch(() => {})
@@ -98,6 +109,30 @@ export default function Settings() {
               />
             </div>
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email (rapport hebdomadaire)</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                placeholder="vous@exemple.com"
+              />
+              <p className="text-xs text-gray-400 mt-1">Recevez un résumé chaque lundi matin</p>
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Rapport hebdomadaire</p>
+                <p className="text-xs text-gray-400">Envoyé chaque lundi à 8h00</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWeeklyReportEnabled(v => !v)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${weeklyReportEnabled ? 'bg-emerald-600' : 'bg-gray-200'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${weeklyReportEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Logo</label>
               <div className="flex items-center gap-3">
                 <div className="w-16 h-16 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 text-xs">
@@ -109,10 +144,58 @@ export default function Settings() {
               </div>
             </div>
           </div>
-          <SaveButton loading={savingProfil} onClick={() => save({ name: boutiqueName }, setSavingProfil)} />
+          <SaveButton loading={savingProfil} onClick={() => save({ name: boutiqueName, email, weeklyReportEnabled }, setSavingProfil)} />
         </SectionCard>
 
-        {/* ── Section 2: WhatsApp ── */}
+        {/* ── Section 2: Informations boutique ── */}
+        <SectionCard icon={Building2} title="Informations boutique">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Secteur d'activité <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={sector}
+                onChange={e => setSector(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+              >
+                <option value="">— Choisir un secteur —</option>
+                <option value="BEAUTE_COSMETIQUES">Beauté &amp; Cosmétiques</option>
+                <option value="MODE_VETEMENTS">Mode &amp; Vêtements</option>
+                <option value="DECORATION_MAISON">Décoration Maison</option>
+                <option value="ELECTRONIQUE_HIGH_TECH">Électronique &amp; High-Tech</option>
+                <option value="ALIMENTATION_EPICERIE">Alimentation &amp; Épicerie</option>
+                <option value="SPORT_FITNESS">Sport &amp; Fitness</option>
+                <option value="BEBE_ENFANT">Bébé &amp; Enfant</option>
+                <option value="BIJOUX_ACCESSOIRES">Bijoux &amp; Accessoires</option>
+                <option value="AUTRE">Autre</option>
+              </select>
+              <p className="text-xs text-gray-400 mt-1">Utilisé pour personaliser vos analyses</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Coursier principal</label>
+              <select
+                value={defaultDeliveryCompany}
+                onChange={e => setDefaultDeliveryCompany(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+              >
+                <option value="">— Aucun (optionnel) —</option>
+                <option value="AMANA">Amana</option>
+                <option value="MAYSTRO">Maystro</option>
+                <option value="OZONEXPRESS">Ozonexpress</option>
+                <option value="CATHEDIS">Cathedis</option>
+                <option value="SENDIT">Sendit</option>
+                <option value="TAWSSIL">Tawssil</option>
+                <option value="AMEEX">Ameex</option>
+                <option value="AUTRE">Autre</option>
+              </select>
+              <p className="text-xs text-gray-400 mt-1">Utilisé comme fallback si non détecté dans la commande</p>
+            </div>
+          </div>
+          <SaveButton loading={savingBoutique} onClick={() => save({ sector: sector || null, defaultDeliveryCompany: defaultDeliveryCompany || null }, setSavingBoutique)} />
+        </SectionCard>
+
+        {/* ── Section 3: WhatsApp ── */}
         <SectionCard icon={MessageSquare} title="Configuration WhatsApp">
           <div className="space-y-3">
             <div>
