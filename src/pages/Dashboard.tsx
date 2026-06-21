@@ -1745,10 +1745,22 @@ export default function Dashboard() {
 
   // refreshAll — toujours à jour via ref pour éviter les stale closures dans l'interval
   const refreshAll = useCallback(() => {
+    // Sync cashflow params inline avant de fetcher (pas de risque de stale ref)
+    if (isFiltering && (dateFrom || dateTo)) {
+      cashflowParamsRef.current = {
+        ...(dateFrom ? { dateFrom } : {}),
+        ...(dateTo ? { dateTo } : {}),
+      }
+    } else if (period !== 'all') {
+      const from = getPeriodStart(period)
+      cashflowParamsRef.current = from ? { dateFrom: from } : {}
+    } else {
+      cashflowParamsRef.current = {}
+    }
     fetchOrders(search, statusFilter, period)
     fetchStats(period)
     fetchCashflow()
-  }, [search, statusFilter, period])
+  }, [search, statusFilter, period, isFiltering, dateFrom, dateTo])
   useEffect(() => { refreshAllRef.current = refreshAll }, [refreshAll])
 
   // Auto-refresh toutes les 30s
