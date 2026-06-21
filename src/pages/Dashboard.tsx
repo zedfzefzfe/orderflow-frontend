@@ -94,7 +94,7 @@ const STATUS_STRIP_COLOR: Record<string, string> = {
 const KPI_BORDER: Record<string, string> = {
   total: 'border-l-gray-300',
   needsReview: 'border-l-yellow-400',
-  confirmed: 'border-l-blue-400',
+  retournees: 'border-l-red-400',
   delivered: 'border-l-emerald-500',
 }
 
@@ -263,10 +263,15 @@ function StatCard({ label, value, icon: Icon, subtext, borderClass, iconBg, icon
 function KpiDrawer({ data, onClose }: { data: { title: string; orders: Order[] } | null; onClose: () => void }) {
   if (!data) return null
   return (
-    <>
-      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed right-0 top-0 h-full w-full max-w-sm bg-white z-50 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40" />
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[600px] max-h-[80vh] flex flex-col"
+        style={{ borderRadius: 16, padding: 0 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 shrink-0">
           <div>
             <h2 className="font-semibold text-gray-900 text-base">{data.title}</h2>
             <p className="text-xs text-gray-400 mt-0.5">{data.orders.length} commande{data.orders.length !== 1 ? 's' : ''}</p>
@@ -275,17 +280,18 @@ function KpiDrawer({ data, onClose }: { data: { title: string; orders: Order[] }
             <X className="h-5 w-5 text-gray-500" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+        {/* List */}
+        <div className="overflow-y-auto divide-y divide-gray-50 flex-1">
           {data.orders.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-gray-400">
               <Package className="h-8 w-8 mb-2 opacity-40" />
-              <p className="text-sm">Aucune commande</p>
+              <p className="text-sm">Aucune commande sur cette période</p>
             </div>
           ) : data.orders.map((order) => {
             const cod = (order.totalPrice ?? 0) + (order.deliveryPrice ?? 0)
             return (
-              <div key={order.id} className="px-5 py-3.5 hover:bg-gray-50 transition-colors">
-                <div className="flex items-start justify-between gap-2">
+              <div key={order.id} className="px-6 py-3.5 hover:bg-gray-50 transition-colors">
+                <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium text-sm text-gray-900 truncate">{order.customerName}</p>
                     <p className="text-xs text-gray-400 mt-0.5">{formatPhone(order.customerPhone)}</p>
@@ -303,7 +309,7 @@ function KpiDrawer({ data, onClose }: { data: { title: string; orders: Order[] }
           })}
         </div>
       </div>
-    </>
+    </div>
   )
 }
 
@@ -2214,14 +2220,14 @@ export default function Dashboard() {
               onClick={() => setKpiDrawer({ title: 'Commandes à vérifier', orders: orders.filter(o => o.needsReview) })}
             />
             <StatCard
-              label="Confirmées"
-              value={stats?.statusBreakdown?.CONFIRMED ?? 0}
-              icon={CheckCircle}
-              subtext="prêtes pour livraison"
-              borderClass={KPI_BORDER.confirmed}
-              iconBg="bg-blue-50"
-              iconColor="text-blue-500"
-              onClick={() => setKpiDrawer({ title: 'Commandes confirmées', orders: orders.filter(o => o.status === 'CONFIRMED') })}
+              label="Retournées / Annulées"
+              value={(stats?.statusBreakdown?.RETOURNE ?? 0) + (stats?.statusBreakdown?.ANNULE ?? 0)}
+              icon={RotateCcw}
+              subtext="non encaissées"
+              borderClass={KPI_BORDER.retournees}
+              iconBg="bg-red-50"
+              iconColor="text-red-500"
+              onClick={() => setKpiDrawer({ title: 'Retournées / Annulées', orders: orders.filter(o => o.status === 'RETOURNE' || o.status === 'ANNULE') })}
             />
             <StatCard
               label="Livrées"
