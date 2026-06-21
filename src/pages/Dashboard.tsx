@@ -230,12 +230,16 @@ function SkeletonRow() {
   )
 }
 
-function StatCard({ label, value, icon: Icon, subtext, borderClass, iconBg, iconColor }: {
+function StatCard({ label, value, icon: Icon, subtext, borderClass, iconBg, iconColor, onClick, active }: {
   label: string; value: number | undefined; icon: React.ElementType
   subtext?: string; borderClass: string; iconBg: string; iconColor: string
+  onClick?: () => void; active?: boolean
 }) {
   return (
-    <div className={`bg-white rounded-xl shadow-sm border border-gray-100 border-l-4 ${borderClass} px-5 py-4`}>
+    <div
+      onClick={onClick}
+      className={`bg-white rounded-xl shadow-sm border border-gray-100 border-l-4 ${borderClass} px-5 py-4${onClick ? ' cursor-pointer hover:shadow-md transition-all duration-150' : ''}${active ? ' ring-2 ring-emerald-400 ring-offset-1' : ''}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">{label}</p>
@@ -1522,6 +1526,8 @@ export default function Dashboard() {
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   )
+  const [kpiFilter, setKpiFilter] = useState<'NEEDS_REVIEW' | 'EN_ATTENTE' | null>(null)
+  const [activeKpiCard, setActiveKpiCard] = useState<string | null>(null)
 
   // ── Voice order state ────────────────────────────────────────────────────────
   type VoiceStep = 'idle' | 'recording' | 'processing' | 'review' | 'form'
@@ -1980,39 +1986,44 @@ export default function Dashboard() {
   }
 
   const filteredOrders = useMemo(() => {
-    if (!isFiltering) return orders
-    return orders.filter((o) => {
-      if (filterByField === 'createdAt') {
-        const orderDate = new Date(o.createdAt)
-        orderDate.setHours(0, 0, 0, 0)
-        if (dateFrom) {
-          const from = new Date(dateFrom)
-          from.setHours(0, 0, 0, 0)
-          if (orderDate < from) return false
+    let result = orders
+    if (isFiltering) {
+      result = result.filter((o) => {
+        if (filterByField === 'createdAt') {
+          const orderDate = new Date(o.createdAt)
+          orderDate.setHours(0, 0, 0, 0)
+          if (dateFrom) {
+            const from = new Date(dateFrom)
+            from.setHours(0, 0, 0, 0)
+            if (orderDate < from) return false
+          }
+          if (dateTo) {
+            const to = new Date(dateTo)
+            to.setHours(23, 59, 59, 999)
+            if (orderDate > to) return false
+          }
+          return true
+        } else {
+          const parsed = parseDeliveryDate(o.deliveryDate || '')
+          if (!parsed) return true
+          if (dateFrom) {
+            const from = new Date(dateFrom)
+            from.setHours(0, 0, 0, 0)
+            if (parsed < from) return false
+          }
+          if (dateTo) {
+            const to = new Date(dateTo)
+            to.setHours(23, 59, 59, 999)
+            if (parsed > to) return false
+          }
+          return true
         }
-        if (dateTo) {
-          const to = new Date(dateTo)
-          to.setHours(23, 59, 59, 999)
-          if (orderDate > to) return false
-        }
-        return true
-      } else {
-        const parsed = parseDeliveryDate(o.deliveryDate || '')
-        if (!parsed) return true
-        if (dateFrom) {
-          const from = new Date(dateFrom)
-          from.setHours(0, 0, 0, 0)
-          if (parsed < from) return false
-        }
-        if (dateTo) {
-          const to = new Date(dateTo)
-          to.setHours(23, 59, 59, 999)
-          if (parsed > to) return false
-        }
-        return true
-      }
-    })
-  }, [orders, isFiltering, filterByField, dateFrom, dateTo])
+      })
+    }
+    if (kpiFilter === 'NEEDS_REVIEW') return result.filter(o => o.needsReview)
+    if (kpiFilter === 'EN_ATTENTE') return result.filter(o => o.status === 'CONFIRMED' || o.status === 'EN_LIVRAISON')
+    return result
+  }, [orders, isFiltering, filterByField, dateFrom, dateTo, kpiFilter])
 
   // ── Derive sections ─────────────────────────────────────────────────────────
 
@@ -2144,6 +2155,7 @@ export default function Dashboard() {
               borderClass={KPI_BORDER.total}
               iconBg="bg-gray-100"
               iconColor="text-gray-500"
+              onClick={() => { setStatusFilter('ALL'); setKpiFilter(null); setActiveKpiCard(null) }}
             />
             <StatCard
               label="À vérifier"
@@ -2153,6 +2165,11 @@ export default function Dashboard() {
               borderClass={KPI_BORDER.needsReview}
               iconBg="bg-yellow-50"
               iconColor="text-yellow-500"
+              active={activeKpiCard === 'needsReview'}
+              onClick={() => {
+                if (activeKpiCard === 'needsReview') { setActiveKpiCard(null); setStatusFilter('ALL'); setKpiFilter(null) }
+                else { setActiveKpiCard('needsReview'); setStatusFilter('ALL'); setKpiFilter('NEEDS_REVIEW') }
+              }}
             />
             <StatCard
               label="Confirmées"
@@ -2162,6 +2179,11 @@ export default function Dashboard() {
               borderClass={KPI_BORDER.confirmed}
               iconBg="bg-blue-50"
               iconColor="text-blue-500"
+              active={activeKpiCard === 'confirmed'}
+              onClick={() => {
+                if (activeKpiCard === 'confirmed') { setActiveKpiCard(null); setStatusFilter('ALL'); setKpiFilter(null) }
+                else { setActiveKpiCard('confirmed'); setStatusFilter('CONFIRMED'); setKpiFilter(null) }
+              }}
             />
             <StatCard
               label="Livrées"
@@ -2171,6 +2193,11 @@ export default function Dashboard() {
               borderClass={KPI_BORDER.delivered}
               iconBg="bg-emerald-950/10"
               iconColor="text-emerald-900"
+              active={activeKpiCard === 'livrees'}
+              onClick={() => {
+                if (activeKpiCard === 'livrees') { setActiveKpiCard(null); setStatusFilter('ALL'); setKpiFilter(null) }
+                else { setActiveKpiCard('livrees'); setStatusFilter('LIVRE'); setKpiFilter(null) }
+              }}
             />
           </div>
         </div>
@@ -2277,7 +2304,13 @@ export default function Dashboard() {
         {/* ── Cashflow KPI cards ── */}
         <div className="grid grid-cols-2 gap-4">
           {/* CA Encaissé */}
-          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-5 shadow-lg text-white">
+          <button
+            className={`bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-5 shadow-lg text-white text-left hover:shadow-xl transition-all duration-150${activeKpiCard === 'caEncaisse' ? ' ring-2 ring-white ring-offset-2 ring-offset-emerald-600' : ''}`}
+            onClick={() => {
+              if (activeKpiCard === 'caEncaisse') { setActiveKpiCard(null); setStatusFilter('ALL'); setKpiFilter(null) }
+              else { setActiveKpiCard('caEncaisse'); setStatusFilter('LIVRE'); setKpiFilter(null) }
+            }}
+          >
             <p className="text-emerald-100 text-xs font-semibold uppercase tracking-wider">💰 CA Encaissé</p>
             <p className="text-3xl font-bold mt-2 tabular-nums">
               {cashflow === null
@@ -2288,13 +2321,15 @@ export default function Dashboard() {
               {cashflow?.nbLivrees ?? 0} commande{(cashflow?.nbLivrees ?? 0) !== 1 ? 's' : ''} livrée{(cashflow?.nbLivrees ?? 0) !== 1 ? 's' : ''}
               {(cashflow?.tauxLivraison ?? 0) > 0 && ` · ${cashflow!.tauxLivraison}% taux`}
             </p>
-          </div>
+          </button>
 
           {/* CA En Attente — cliquable */}
           <button
-            className="bg-white border-2 border-amber-200 rounded-2xl p-5 shadow-sm text-left hover:border-amber-300 hover:shadow-md transition-all"
-            onClick={() => setCloturerOpen(true)}
-            title="Cliquer pour clôturer la journée"
+            className={`bg-white border-2 rounded-2xl p-5 shadow-sm text-left hover:shadow-md transition-all duration-150${activeKpiCard === 'enAttente' ? ' border-emerald-400 ring-2 ring-emerald-400 ring-offset-1' : ' border-amber-200 hover:border-amber-300'}`}
+            onClick={() => {
+              if (activeKpiCard === 'enAttente') { setActiveKpiCard(null); setStatusFilter('ALL'); setKpiFilter(null) }
+              else { setActiveKpiCard('enAttente'); setStatusFilter('ALL'); setKpiFilter('EN_ATTENTE') }
+            }}
           >
             <p className="text-amber-600 text-xs font-semibold uppercase tracking-wider">⏳ En Attente</p>
             <p className="text-3xl font-bold mt-2 text-gray-900 tabular-nums">
