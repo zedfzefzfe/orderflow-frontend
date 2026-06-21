@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import jsPDF from 'jspdf'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
@@ -10,7 +10,7 @@ import {
 import {
   Package, CheckCircle, AlertCircle, Search, Inbox,
   Phone, XCircle, Truck, CalendarClock,
-  Pencil, Trash2, Check, X, TriangleAlert, Bell, BellOff,
+  Pencil, Trash2, Check, X, TriangleAlert, Bell, BellOff, RotateCcw,
 } from 'lucide-react'
 import { formatDateFr, formatPhone, timeAgo } from '@/lib/dateUtils'
 import SimulatorModal from '@/components/SimulatorModal'
@@ -28,6 +28,14 @@ interface Stats {
   pendingOrders: number
   needsReviewCount: number
   statusBreakdown: Record<string, number>
+}
+
+interface Cashflow {
+  caEncaisse: number
+  enAttente: number
+  nbLivrees: number
+  aConfirmer: number
+  tauxLivraison: number
 }
 
 type Period = 'today' | 'week' | 'month' | 'all'
@@ -54,21 +62,33 @@ interface EditDraft {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STATUS_PILL: Record<string, string> = {
-  CONFIRMED: 'bg-blue-50 text-blue-700 border-blue-200',
-  DELIVERED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  CANCELLED: 'bg-red-50 text-red-700 border-red-200',
+  CONFIRMED:    'bg-blue-50 text-blue-700 border-blue-200',
+  EN_LIVRAISON: 'bg-amber-50 text-amber-700 border-amber-200',
+  LIVRE:        'bg-emerald-50 text-emerald-700 border-emerald-200',
+  RETOURNE:     'bg-red-50 text-red-700 border-red-200',
+  ANNULE:       'bg-gray-50 text-gray-500 border-gray-200',
+  DELIVERED:    'bg-emerald-50 text-emerald-700 border-emerald-200',
+  CANCELLED:    'bg-gray-50 text-gray-500 border-gray-200',
 }
 
 const STATUS_ICON: Record<string, React.ElementType> = {
-  CONFIRMED: CheckCircle,
-  DELIVERED: Package,
-  CANCELLED: XCircle,
+  CONFIRMED:    CheckCircle,
+  EN_LIVRAISON: Truck,
+  LIVRE:        Package,
+  RETOURNE:     RotateCcw,
+  ANNULE:       XCircle,
+  DELIVERED:    Package,
+  CANCELLED:    XCircle,
 }
 
 const STATUS_STRIP_COLOR: Record<string, string> = {
-  CONFIRMED: '#93c5fd',
-  DELIVERED: '#34d399',
-  CANCELLED: '#fca5a5',
+  CONFIRMED:    '#93c5fd',
+  EN_LIVRAISON: '#fcd34d',
+  LIVRE:        '#34d399',
+  RETOURNE:     '#fca5a5',
+  ANNULE:       '#e5e7eb',
+  DELIVERED:    '#34d399',
+  CANCELLED:    '#fca5a5',
 }
 
 const KPI_BORDER: Record<string, string> = {
@@ -448,7 +468,8 @@ function TableHead({ showActions = false, selectable = false, allSelected = fals
               type="checkbox"
               checked={allSelected}
               ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected }}
-              onChange={onSelectAll}
+              onChange={onSelectAll ?? (() => {})}
+              readOnly={!onSelectAll}
               className="h-3.5 w-3.5 rounded accent-emerald-600 cursor-pointer"
               title="Tout sélectionner"
             />
@@ -574,7 +595,7 @@ function EditRowInline({ draft, onChange, onSave, onCancel, hasCheckbox }: {
 
 // ── Desktop order row ─────────────────────────────────────────────────────────
 
-function OrderRow({ order, index, stripColor, onRowClick, onStatusChange, urgency, editable, onRowEditStart, onDeleteRequest, onSendToLivreur, onPrintLabel, selectable, selected, hasAnySelected, onToggleSelect, editingDeliveryId, editDeliveryValue, onDeliveryEditStart, onDeliveryEditChange, onDeliveryEditSave, onDeliveryEditCancel, onClientClick }: {
+function OrderRow({ order, index, stripColor, onRowClick, onStatusChange: _onStatusChange, urgency, editable, onRowEditStart, onDeleteRequest, onSendToLivreur, onPrintLabel, selectable, selected, hasAnySelected, onToggleSelect, editingDeliveryId, editDeliveryValue, onDeliveryEditStart, onDeliveryEditChange, onDeliveryEditSave, onDeliveryEditCancel, onClientClick, onMarkLivre, onMarkRetourne }: {
   order: Order
   index: number
   stripColor: string
@@ -597,6 +618,8 @@ function OrderRow({ order, index, stripColor, onRowClick, onStatusChange, urgenc
   onDeliveryEditSave?: (id: string) => void
   onDeliveryEditCancel?: () => void
   onClientClick?: (phone: string, name: string) => void
+  onMarkLivre?: () => void
+  onMarkRetourne?: () => void
 }) {
   const URGENCY_ROW_BG: Record<number, string> = { 0: 'bg-red-50/30', 1: 'bg-orange-50/30', 2: 'bg-yellow-50/30', 3: 'bg-amber-50/30' }
   const rowBg = urgency
@@ -755,27 +778,10 @@ function OrderRow({ order, index, stripColor, onRowClick, onStatusChange, urgenc
         })()}
       </td>
 
-      {/* Status + livreur button */}
+      {/* Status + contextual action buttons */}
       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-col gap-1.5">
-          <Select value={order.status} onValueChange={(val) => onStatusChange(order.id, val)}>
-            <SelectTrigger className="h-auto w-auto border-0 p-0 focus:ring-0 bg-transparent shadow-none [&>svg]:hidden">
-              <StatusPill status={order.status} />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(STATUS_LABELS).map(([key, label]) => {
-                const ItemIcon = STATUS_ICON[key] || AlertCircle
-                return (
-                  <SelectItem key={key} value={key} className="text-xs py-2">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium ${STATUS_PILL[key] || ''}`}>
-                      <ItemIcon className="h-3 w-3" />
-                      {label}
-                    </span>
-                  </SelectItem>
-                )
-              })}
-            </SelectContent>
-          </Select>
+          <StatusPill status={order.status} />
           {editable && order.status === 'CONFIRMED' && (
             <div className="flex flex-wrap gap-1">
               <button
@@ -789,6 +795,22 @@ function OrderRow({ order, index, stripColor, onRowClick, onStatusChange, urgenc
                 className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors whitespace-nowrap"
               >
                 🖨️ Bordereau
+              </button>
+            </div>
+          )}
+          {editable && order.status === 'EN_LIVRAISON' && (
+            <div className="flex flex-wrap gap-1">
+              <button
+                onClick={onMarkLivre}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors whitespace-nowrap"
+              >
+                ✅ Livré
+              </button>
+              <button
+                onClick={onMarkRetourne}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors whitespace-nowrap"
+              >
+                ↩️ Retourné
               </button>
             </div>
           )}
@@ -822,7 +844,7 @@ function OrderRow({ order, index, stripColor, onRowClick, onStatusChange, urgenc
 
 // ── LivreurModal ──────────────────────────────────────────────────────────────
 
-function LivreurModal({ order, onClose }: { order: Order; onClose: () => void }) {
+function LivreurModal({ order, onClose, onMarkEnLivraison }: { order: Order; onClose: () => void; onMarkEnLivraison?: () => void }) {
   const saved = localStorage.getItem('livreur_whatsapp') || ''
   const [phone, setPhone] = useState(saved)
   const [remember, setRemember] = useState(true)
@@ -857,6 +879,7 @@ function LivreurModal({ order, onClose }: { order: Order; onClose: () => void })
 
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank')
     setSent(true)
+    onMarkEnLivraison?.()
   }
 
   return (
@@ -1160,6 +1183,111 @@ function LabelPreviewModal({ orders, businessName, onClose }: {
   )
 }
 
+// ── CloturerModal ─────────────────────────────────────────────────────────────
+
+type CloturerDecision = Record<string, 'LIVRE' | 'RETOURNE'>
+
+function CloturerModal({ orders, onClose, onConfirm }: {
+  orders: Order[]
+  onClose: () => void
+  onConfirm: (decisions: CloturerDecision) => void
+}) {
+  const pending = orders.filter(o => o.status === 'CONFIRMED' || o.status === 'EN_LIVRAISON')
+  const [decisions, setDecisions] = useState<CloturerDecision>({})
+
+  const decide = (id: string, status: 'LIVRE' | 'RETOURNE') =>
+    setDecisions(prev => ({ ...prev, [id]: status }))
+
+  const validateAll = () => {
+    const all: CloturerDecision = {}
+    pending.forEach(o => { all[o.id] = decisions[o.id] ?? 'LIVRE' })
+    onConfirm(all)
+  }
+
+  const decided = Object.keys(decisions).length
+  const totalCOD = pending
+    .filter(o => (decisions[o.id] ?? null) !== 'RETOURNE')
+    .reduce((sum, o) => sum + (o.totalPrice ?? 0) + (o.deliveryPrice ?? 0), 0)
+
+  if (pending.length === 0) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-8 text-center">
+          <div className="text-4xl mb-3">✅</div>
+          <p className="font-semibold text-gray-800">Aucune commande en attente</p>
+          <p className="text-sm text-gray-400 mt-1">Toutes les livraisons sont à jour.</p>
+          <button onClick={onClose} className="mt-5 w-full py-2.5 rounded-xl bg-emerald-600 text-white font-medium text-sm">Fermer</button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-100 shrink-0">
+          <div>
+            <p className="font-semibold text-gray-900">Clôturer la journée</p>
+            <p className="text-xs text-gray-400 mt-0.5">{pending.length} commande{pending.length > 1 ? 's' : ''} en attente</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"><X className="h-4 w-4" /></button>
+        </div>
+
+        {/* Order list */}
+        <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
+          {pending.map(o => {
+            const d = decisions[o.id]
+            const cod = (o.totalPrice ?? 0) + (o.deliveryPrice ?? 0)
+            return (
+              <div key={o.id} className={`px-4 py-3 transition-colors ${d === 'LIVRE' ? 'bg-emerald-50/50' : d === 'RETOURNE' ? 'bg-red-50/50' : ''}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-gray-900 text-sm truncate">{o.customerName}</p>
+                    <p className="text-xs text-gray-400 truncate">{o.product} · {cod > 0 ? `${cod.toLocaleString('fr-FR')} DH` : '—'}</p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={() => decide(o.id, 'LIVRE')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${d === 'LIVRE' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'}`}
+                    >
+                      ✅ Livré
+                    </button>
+                    <button
+                      onClick={() => decide(o.id, 'RETOURNE')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${d === 'RETOURNE' ? 'bg-red-500 text-white border-red-500 shadow-sm' : 'border-red-200 text-red-600 hover:bg-red-50'}`}
+                    >
+                      ↩️ Retourné
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-gray-100 shrink-0 space-y-3">
+          {decided > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-500">{decided}/{pending.length} renseignées</span>
+              {totalCOD > 0 && (
+                <span className="font-bold text-emerald-600">💰 {totalCOD.toLocaleString('fr-FR')} DH à encaisser</span>
+              )}
+            </div>
+          )}
+          <button
+            onClick={validateAll}
+            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm transition-colors"
+          >
+            {decided === pending.length ? '✅ Valider les décisions' : `Valider tout comme Livré (${pending.length - decided} restantes)`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main dashboard ────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -1185,6 +1313,14 @@ export default function Dashboard() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkModalOpen, setBulkModalOpen] = useState(false)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [dateFrom, setDateFrom] = useState<string>('')
+  const [dateTo, setDateTo] = useState<string>('')
+  const [isFiltering, setIsFiltering] = useState(false)
+  const [filterByField, setFilterByField] = useState<'createdAt' | 'deliveryDate'>('createdAt')
+  const [cashflow, setCashflow] = useState<Cashflow | null>(null)
+  const [displayEncaisse, setDisplayEncaisse] = useState(0)
+  const [cloturerOpen, setCloturerOpen] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [selectedClient, setSelectedClient] = useState<{ phone: string; name: string } | null>(null)
@@ -1234,6 +1370,26 @@ export default function Dashboard() {
       const data = await apiGet(`/api/stats?period=${periodVal}`)
       setStats(data)
     } catch { /* non-critical */ }
+  }, [])
+
+  const fetchCashflow = useCallback(async () => {
+    try {
+      const data = await apiGet('/api/stats/cashflow')
+      setCashflow(data)
+      setDisplayEncaisse(data.caEncaisse)
+    } catch { /* non-critical */ }
+  }, [])
+
+  const animateCountUp = useCallback((from: number, to: number) => {
+    const duration = 700
+    const start = performance.now()
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / duration, 1)
+      const ease = 1 - Math.pow(1 - t, 3)
+      setDisplayEncaisse(Math.round(from + (to - from) * ease))
+      if (t < 1) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
   }, [])
 
   // ── Voice recording helpers ──────────────────────────────────────────────────
@@ -1347,6 +1503,7 @@ export default function Dashboard() {
   useEffect(() => {
     fetchOrders(search, statusFilter, 'all')
     fetchStats('all')
+    fetchCashflow()
     apiGet('/api/business/me').then((d) => {
       if (d?.name) setBusinessName(d.name)
       if (d?.vapidPublicKey) setVapidPublicKey(d.vapidPublicKey)
@@ -1369,15 +1526,103 @@ export default function Dashboard() {
       setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status: newStatus as Order['status'] } : o))
       if (selectedOrder?.id === orderId) setSelectedOrder((p) => p ? { ...p, status: newStatus as Order['status'] } : null)
       fetchStats(period)
+      fetchCashflow()
     } catch { /* could show toast */ }
   }
-
-  const handleSimulated = () => { fetchOrders(search, statusFilter, period); fetchStats(period) }
 
   const showToast = (msg: string, ok: boolean) => {
     if (toastTimer.current) clearTimeout(toastTimer.current)
     setToast({ msg, ok })
     toastTimer.current = setTimeout(() => setToast(null), 2500)
+  }
+
+  const handleSimulated = () => { fetchOrders(search, statusFilter, period); fetchStats(period) }
+
+  const handleMarkLivre = async (order: Order) => {
+    const orderCOD = (order.totalPrice ?? 0) + (order.deliveryPrice ?? 0)
+    const oldEncaisse = cashflow?.caEncaisse ?? 0
+
+    // Optimistic update
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'LIVRE' as const } : o))
+    if (selectedOrder?.id === order.id) setSelectedOrder(p => p ? { ...p, status: 'LIVRE' as const } : null)
+    setCashflow(prev => prev ? {
+      ...prev,
+      caEncaisse: prev.caEncaisse + orderCOD,
+      enAttente: Math.max(0, prev.enAttente - orderCOD),
+      nbLivrees: prev.nbLivrees + 1,
+      aConfirmer: Math.max(0, prev.aConfirmer - 1),
+    } : null)
+
+    animateCountUp(oldEncaisse, oldEncaisse + orderCOD)
+    try { audioRef.current?.play() } catch { /* audio blocked */ }
+
+    try {
+      await apiPatch(`/api/orders/${order.id}`, { status: 'LIVRE' })
+      fetchStats(period)
+    } catch {
+      showToast('Erreur lors de la mise à jour', false)
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: order.status } : o))
+      fetchCashflow()
+    }
+  }
+
+  const handleMarkRetourne = async (order: Order) => {
+    const orderCOD = (order.totalPrice ?? 0) + (order.deliveryPrice ?? 0)
+
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'RETOURNE' as const } : o))
+    if (selectedOrder?.id === order.id) setSelectedOrder(p => p ? { ...p, status: 'RETOURNE' as const } : null)
+    setCashflow(prev => prev ? {
+      ...prev,
+      enAttente: Math.max(0, prev.enAttente - orderCOD),
+      aConfirmer: Math.max(0, prev.aConfirmer - 1),
+    } : null)
+
+    try {
+      await apiPatch(`/api/orders/${order.id}`, { status: 'RETOURNE' })
+      fetchStats(period)
+    } catch {
+      showToast('Erreur lors de la mise à jour', false)
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: order.status } : o))
+      fetchCashflow()
+    }
+  }
+
+  const handleBatchUpdate = async (decisions: Record<string, 'LIVRE' | 'RETOURNE'>) => {
+    setCloturerOpen(false)
+    const updates = Object.entries(decisions).map(([orderId, status]) => ({ orderId, status }))
+    if (updates.length === 0) return
+
+    const livrées = updates.filter(u => u.status === 'LIVRE')
+    const livreeCOD = livrées.reduce((sum, u) => {
+      const o = orders.find(x => x.id === u.orderId)
+      return sum + (o ? (o.totalPrice ?? 0) + (o.deliveryPrice ?? 0) : 0)
+    }, 0)
+    const oldEncaisse = cashflow?.caEncaisse ?? 0
+
+    // Optimistic bulk update
+    setOrders(prev => prev.map(o => decisions[o.id] ? { ...o, status: decisions[o.id] as Order['status'] } : o))
+    setCashflow(prev => prev ? {
+      ...prev,
+      caEncaisse: prev.caEncaisse + livreeCOD,
+      enAttente: Math.max(0, prev.enAttente - livreeCOD),
+      nbLivrees: prev.nbLivrees + livrées.length,
+      aConfirmer: Math.max(0, prev.aConfirmer - updates.length),
+    } : null)
+
+    if (livreeCOD > 0) {
+      animateCountUp(oldEncaisse, oldEncaisse + livreeCOD)
+      try { audioRef.current?.play() } catch { /* blocked */ }
+    }
+
+    try {
+      await apiPost('/api/orders/batch-status', { updates })
+      fetchStats(period)
+      showToast(`✅ ${livrées.length} livraison${livrées.length > 1 ? 's' : ''} confirmée${livrées.length > 1 ? 's' : ''}`, true)
+    } catch {
+      showToast('Erreur lors de la mise à jour groupée', false)
+      fetchOrders(search, statusFilter, period)
+      fetchCashflow()
+    }
   }
 
   const startEdit = (order: Order) => {
@@ -1439,13 +1684,80 @@ export default function Dashboard() {
     }
   }
 
+  // ── Date filter helpers ──────────────────────────────────────────────────────
+
+  const applyDateFilter = () => {
+    if (!dateFrom && !dateTo) return
+    setIsFiltering(true)
+  }
+
+  const resetDateFilter = () => {
+    setDateFrom('')
+    setDateTo('')
+    setIsFiltering(false)
+  }
+
+  const applyQuickFilter = (days: number | string) => {
+    const today = new Date()
+    const todayStr = today.toISOString().split('T')[0]
+    if (days === 0) {
+      setDateFrom(todayStr)
+      setDateTo(todayStr)
+    } else if (days === 'month') {
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+      setDateFrom(firstDay.toISOString().split('T')[0])
+      setDateTo(todayStr)
+    } else {
+      const from = new Date()
+      from.setDate(from.getDate() - (days as number))
+      setDateFrom(from.toISOString().split('T')[0])
+      setDateTo(todayStr)
+    }
+    setIsFiltering(true)
+  }
+
+  const filteredOrders = useMemo(() => {
+    if (!isFiltering) return orders
+    return orders.filter((o) => {
+      if (filterByField === 'createdAt') {
+        const orderDate = new Date(o.createdAt)
+        orderDate.setHours(0, 0, 0, 0)
+        if (dateFrom) {
+          const from = new Date(dateFrom)
+          from.setHours(0, 0, 0, 0)
+          if (orderDate < from) return false
+        }
+        if (dateTo) {
+          const to = new Date(dateTo)
+          to.setHours(23, 59, 59, 999)
+          if (orderDate > to) return false
+        }
+        return true
+      } else {
+        const parsed = parseDeliveryDate(o.deliveryDate || '')
+        if (!parsed) return true
+        if (dateFrom) {
+          const from = new Date(dateFrom)
+          from.setHours(0, 0, 0, 0)
+          if (parsed < from) return false
+        }
+        if (dateTo) {
+          const to = new Date(dateTo)
+          to.setHours(23, 59, 59, 999)
+          if (parsed > to) return false
+        }
+        return true
+      }
+    })
+  }, [orders, isFiltering, filterByField, dateFrom, dateTo])
+
   // ── Derive sections ─────────────────────────────────────────────────────────
 
-  const urgentOrders = orders
+  const urgentOrders = filteredOrders
     .filter((o) => getDeliveryUrgency(o.deliveryDate) !== null)
     .sort((a, b) => new Date(a.deliveryDate!).getTime() - new Date(b.deliveryDate!).getTime())
 
-  const regularOrders = orders
+  const regularOrders = filteredOrders
 
   const rowProps = {
     onStatusChange: handleStatusChange,
@@ -1480,6 +1792,8 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#f8fafc]">
       <PlanBanner />
+      {/* Hidden audio element for cha-ching */}
+      <audio ref={audioRef} src="/sounds/cha-ching.mp3" preload="auto" />
 
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
@@ -1490,6 +1804,13 @@ export default function Dashboard() {
             <p className="text-sm text-gray-500 mt-0.5">Gérez vos commandes WhatsApp</p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCloturerOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border bg-white text-gray-700 border-gray-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition-all"
+              title="Clôturer la journée"
+            >
+              🌙 <span className="hidden sm:inline">Clôturer</span>
+            </button>
             {showSimulator && <SimulatorModal onOrderCreated={handleSimulated} />}
             {typeof Notification !== 'undefined' && (
               notifPermission === 'granted' ? (
@@ -1591,6 +1912,89 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* ── Date range filter ── */}
+        <div className="space-y-2">
+          <div className="flex gap-2 flex-wrap">
+            {([
+              { label: "Aujourd'hui", days: 0 },
+              { label: '7 derniers jours', days: 7 },
+              { label: '30 derniers jours', days: 30 },
+              { label: 'Ce mois', days: 'month' },
+            ] as { label: string; days: number | string }[]).map(({ label, days }) => (
+              <button
+                key={label}
+                onClick={() => applyQuickFilter(days)}
+                className="text-xs text-gray-500 hover:text-green-600 hover:bg-green-50 px-2 py-1 rounded-md transition-colors"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex gap-1 text-xs">
+              <button
+                onClick={() => setFilterByField('createdAt')}
+                className={filterByField === 'createdAt'
+                  ? 'bg-green-100 text-green-700 px-2 py-1 rounded'
+                  : 'text-gray-500 px-2 py-1 rounded hover:bg-gray-100'}
+              >
+                Date commande
+              </button>
+              <button
+                onClick={() => setFilterByField('deliveryDate')}
+                className={filterByField === 'deliveryDate'
+                  ? 'bg-green-100 text-green-700 px-2 py-1 rounded'
+                  : 'text-gray-500 px-2 py-1 rounded hover:bg-gray-100'}
+              >
+                Date livraison
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm">
+              <span className="text-gray-400 text-sm">📅 Du</span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="text-sm text-gray-700 border-none outline-none bg-transparent"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm">
+              <span className="text-gray-400 text-sm">📅 Au</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="text-sm text-gray-700 border-none outline-none bg-transparent"
+              />
+            </div>
+
+            <button
+              onClick={applyDateFilter}
+              className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+            >
+              Filtrer
+            </button>
+
+            {isFiltering && (
+              <button
+                onClick={resetDateFilter}
+                className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-lg border border-gray-200 text-sm"
+              >
+                ✕ Réinitialiser
+              </button>
+            )}
+
+            {isFiltering && (
+              <span className="text-sm text-green-600 font-medium">
+                {filteredOrders.length} commande{filteredOrders.length !== 1 ? 's' : ''} trouvée{filteredOrders.length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+        </div>
+
         {/* ── Search + status filter pills ── */}
         <div className="space-y-3">
           <div className="relative">
@@ -1622,6 +2026,40 @@ export default function Dashboard() {
               </span>
             )}
           </div>
+        </div>
+
+        {/* ── Cashflow KPI cards ── */}
+        <div className="grid grid-cols-2 gap-4">
+          {/* CA Encaissé */}
+          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-5 shadow-lg text-white">
+            <p className="text-emerald-100 text-xs font-semibold uppercase tracking-wider">💰 CA Encaissé</p>
+            <p className="text-3xl font-bold mt-2 tabular-nums">
+              {cashflow === null
+                ? <span className="inline-block w-24 h-8 bg-emerald-400/40 rounded animate-pulse" />
+                : <>{displayEncaisse.toLocaleString('fr-FR')} DH</>}
+            </p>
+            <p className="text-emerald-200 text-xs mt-1.5">
+              {cashflow?.nbLivrees ?? 0} commande{(cashflow?.nbLivrees ?? 0) !== 1 ? 's' : ''} livrée{(cashflow?.nbLivrees ?? 0) !== 1 ? 's' : ''}
+              {(cashflow?.tauxLivraison ?? 0) > 0 && ` · ${cashflow!.tauxLivraison}% taux`}
+            </p>
+          </div>
+
+          {/* CA En Attente — cliquable */}
+          <button
+            className="bg-white border-2 border-amber-200 rounded-2xl p-5 shadow-sm text-left hover:border-amber-300 hover:shadow-md transition-all"
+            onClick={() => setCloturerOpen(true)}
+            title="Cliquer pour clôturer la journée"
+          >
+            <p className="text-amber-600 text-xs font-semibold uppercase tracking-wider">⏳ En Attente</p>
+            <p className="text-3xl font-bold mt-2 text-gray-900 tabular-nums">
+              {cashflow === null
+                ? <span className="inline-block w-24 h-8 bg-gray-100 rounded animate-pulse" />
+                : <>{(cashflow.enAttente ?? 0).toLocaleString('fr-FR')} DH</>}
+            </p>
+            <p className="text-amber-500 text-xs mt-1.5 animate-pulse">
+              {cashflow?.aConfirmer ?? 0} commande{(cashflow?.aConfirmer ?? 0) !== 1 ? 's' : ''} à confirmer →
+            </p>
+          </button>
         </div>
 
         {/* ── Error banner ── */}
@@ -1783,6 +2221,8 @@ export default function Dashboard() {
                                 onSendToLivreur={() => setLivreurOrder(order)}
                                 onPrintLabel={() => setLabelOrders([order])}
                                 onClientClick={(phone, name) => setSelectedClient({ phone, name })}
+                                onMarkLivre={() => handleMarkLivre(order)}
+                                onMarkRetourne={() => handleMarkRetourne(order)}
                                 {...rowProps}
                               />
                             )
@@ -1836,6 +2276,8 @@ export default function Dashboard() {
                                 hasAnySelected={hasAnySelected}
                                 onToggleSelect={() => toggleSelect(order.id)}
                                 onClientClick={(phone, name) => setSelectedClient({ phone, name })}
+                                onMarkLivre={() => handleMarkLivre(order)}
+                                onMarkRetourne={() => handleMarkRetourne(order)}
                                 {...rowProps}
                               />
                             )
@@ -1861,7 +2303,15 @@ export default function Dashboard() {
       )}
 
       {livreurOrder && (
-        <LivreurModal order={livreurOrder} onClose={() => setLivreurOrder(null)} />
+        <LivreurModal
+          order={livreurOrder}
+          onClose={() => setLivreurOrder(null)}
+          onMarkEnLivraison={() => {
+            const o = livreurOrder
+            setOrders(prev => prev.map(x => x.id === o.id ? { ...x, status: 'EN_LIVRAISON' as const } : x))
+            apiPatch(`/api/orders/${o.id}`, { status: 'EN_LIVRAISON' }).catch(() => {})
+          }}
+        />
       )}
 
       {labelOrders && (
@@ -1918,6 +2368,14 @@ export default function Dashboard() {
           phone={selectedClient.phone}
           name={selectedClient.name}
           onClose={() => setSelectedClient(null)}
+        />
+      )}
+
+      {cloturerOpen && (
+        <CloturerModal
+          orders={orders}
+          onClose={() => setCloturerOpen(false)}
+          onConfirm={handleBatchUpdate}
         />
       )}
 
