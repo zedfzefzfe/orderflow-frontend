@@ -1512,6 +1512,9 @@ export default function Dashboard() {
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [returnReasonOrder, setReturnReasonOrder] = useState<Order | null>(null)
   const [expandedStatusId, setExpandedStatusId] = useState<string | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [secondsSince, setSecondsSince] = useState(0)
+  const refreshAllRef = useRef<() => void>(() => {})
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [selectedClient, setSelectedClient] = useState<{ phone: string; name: string } | null>(null)
   const [vapidPublicKey, setVapidPublicKey] = useState('')
@@ -1548,6 +1551,7 @@ export default function Dashboard() {
       q.set('limit', '500')
       const data = await apiGet(`/api/orders?${q}`)
       setOrders(data.orders || [])
+      setLastUpdated(new Date())
     } catch {
       setError('Impossible de charger les commandes. Le serveur est-il démarré ?')
     } finally {
@@ -1716,6 +1720,28 @@ export default function Dashboard() {
     searchTimer.current = setTimeout(() => fetchOrders(search, statusFilter, period), 350)
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current) }
   }, [search])
+
+  // refreshAll — toujours à jour via ref pour éviter les stale closures dans l'interval
+  const refreshAll = useCallback(() => {
+    fetchOrders(search, statusFilter, period)
+    fetchStats(period)
+    fetchCashflow()
+  }, [search, statusFilter, period])
+  useEffect(() => { refreshAllRef.current = refreshAll }, [refreshAll])
+
+  // Auto-refresh toutes les 30s
+  useEffect(() => {
+    const id = setInterval(() => refreshAllRef.current(), 30000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Compteur "il y a X secondes"
+  useEffect(() => {
+    if (!lastUpdated) return
+    setSecondsSince(0)
+    const id = setInterval(() => setSecondsSince(s => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [lastUpdated])
 
   const handleStatusChange = async (orderId: string, newStatus: string) => {
     try {
@@ -2357,12 +2383,29 @@ export default function Dashboard() {
             <>
               {/* ── Section 1: Toutes les commandes ── */}
               <div>
-                <p className="text-sm font-medium text-gray-600 mb-3">
-                  📋 Toutes les commandes
-                  <span className="ml-1.5 text-xs font-semibold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">
-                    {regularOrders.length}
-                  </span>
-                </p>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-medium text-gray-600">
+                    📋 Toutes les commandes
+                    <span className="ml-1.5 text-xs font-semibold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">
+                      {regularOrders.length}
+                    </span>
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {lastUpdated && (
+                      <span className="text-xs text-gray-400">
+                        Mis à jour il y a {secondsSince < 60 ? `${secondsSince}s` : `${Math.floor(secondsSince / 60)}m`}
+                      </span>
+                    )}
+                    <button
+                      onClick={refreshAll}
+                      title="Actualiser"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Actualiser
+                    </button>
+                  </div>
+                </div>
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
