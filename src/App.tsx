@@ -10,6 +10,7 @@ import Agent from '@/pages/Agent'
 import Admin from '@/pages/Admin'
 import Settings from '@/pages/Settings'
 import Landing from '@/pages/Landing'
+import Clients from '@/pages/Clients'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -69,6 +70,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <Layout><Settings /></Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/clients"
+        element={
+          <ProtectedRoute>
+            <Layout><Clients /></Layout>
           </ProtectedRoute>
         }
       />
