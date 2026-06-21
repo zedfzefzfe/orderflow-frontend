@@ -1515,6 +1515,7 @@ export default function Dashboard() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [secondsSince, setSecondsSince] = useState(0)
   const refreshAllRef = useRef<() => void>(() => {})
+  const cashflowParamsRef = useRef<{ dateFrom?: string; dateTo?: string }>({})
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [selectedClient, setSelectedClient] = useState<{ phone: string; name: string } | null>(null)
   const [vapidPublicKey, setVapidPublicKey] = useState('')
@@ -1568,7 +1569,12 @@ export default function Dashboard() {
 
   const fetchCashflow = useCallback(async () => {
     try {
-      const data = await apiGet('/api/stats/cashflow')
+      const p = cashflowParamsRef.current
+      const q = new URLSearchParams()
+      if (p.dateFrom) q.set('dateFrom', p.dateFrom)
+      if (p.dateTo) q.set('dateTo', p.dateTo)
+      const qs = q.toString()
+      const data = await apiGet(`/api/stats/cashflow${qs ? `?${qs}` : ''}`)
       setCashflow(data)
       setDisplayEncaisse(data.caEncaisse)
     } catch { /* non-critical */ }
@@ -1709,6 +1715,22 @@ export default function Dashboard() {
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [])
+
+  // Sync cashflow params ref with active date filters
+  useEffect(() => {
+    if (isFiltering && (dateFrom || dateTo)) {
+      cashflowParamsRef.current = {
+        ...(dateFrom ? { dateFrom } : {}),
+        ...(dateTo ? { dateTo } : {}),
+      }
+    } else if (period !== 'all') {
+      const from = getPeriodStart(period)
+      cashflowParamsRef.current = from ? { dateFrom: from } : {}
+    } else {
+      cashflowParamsRef.current = {}
+    }
+    fetchCashflow()
+  }, [isFiltering, dateFrom, dateTo, period])
 
   // Period change
   useEffect(() => { fetchOrders(search, statusFilter, period); fetchStats(period) }, [period])
