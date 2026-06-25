@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, TrendingUp, Sparkles, Package, LogOut, Settings, Users } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, Sparkles, Package, LogOut, Settings, Users, Bot } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface NavItemProps {
@@ -68,6 +68,12 @@ export default function Sidebar() {
           icon={Users}
           label="Clients"
           active={location.pathname === '/clients'}
+        />
+        <NavItem
+          to="/automation"
+          icon={Bot}
+          label="Automatisation"
+          active={location.pathname === '/automation'}
         />
       </nav>
 
