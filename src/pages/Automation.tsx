@@ -238,6 +238,7 @@ function ConnectModal({ onClose, onConnected }: {
   const [copied, setCopied] = useState(false)
   const [countdown, setCountdown] = useState<number | null>(null)
   const countdownRef = useRef<number | null>(null)
+  const codeStatusIntervalRef = useRef<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Refs that survive across renders without triggering re-runs
@@ -323,6 +324,7 @@ function ConnectModal({ onClose, onConnected }: {
       if (qrIntervalRef.current !== null) clearInterval(qrIntervalRef.current)
       if (statusIntervalRef.current !== null) clearInterval(statusIntervalRef.current)
       if (countdownRef.current !== null) clearInterval(countdownRef.current)
+      if (codeStatusIntervalRef.current !== null) clearInterval(codeStatusIntervalRef.current)
     }
   }, [onConnected])
 
@@ -350,21 +352,31 @@ function ConnectModal({ onClose, onConnected }: {
   async function fetchPairingCode() {
     if (!phoneInput.trim()) return
     if (countdownRef.current !== null) clearInterval(countdownRef.current)
+    if (codeStatusIntervalRef.current !== null) clearInterval(codeStatusIntervalRef.current)
     setCountdown(null)
     setPairingLoading(true)
     setPairingCode(null)
     setCopied(false)
     setError(null)
     try {
-      const { code } = await apiPost('/api/whatsapp/pairing-code', { phoneNumber: phoneInput.trim() })
-      // Format as XXXX-XXXX if 8 chars without separator
+      const { code } = await apiPost('/api/whatsapp/pairing-code-direct', { phoneNumber: phoneInput.trim() })
       const raw = code as string
       const formatted = raw.includes('-') ? raw : raw.replace(/^(.{4})(.{4})$/, '$1-$2')
       setPairingCode(formatted)
       startCountdown()
+      // Poll status every 3s after showing code — detect when merchant completes link
+      codeStatusIntervalRef.current = window.setInterval(async () => {
+        try {
+          const { connected } = await apiGet('/api/whatsapp/status')
+          if (connected) {
+            if (codeStatusIntervalRef.current !== null) clearInterval(codeStatusIntervalRef.current)
+            onConnected()
+          }
+        } catch { /* silent */ }
+      }, 3_000)
     } catch (err: unknown) {
       const msg = (err as { message?: string })?.message ?? ''
-      setError(msg || 'Impossible de récupérer le code de liaison.')
+      setError(msg || 'Impossible de générer le code de liaison.')
     } finally {
       setPairingLoading(false)
     }
@@ -468,7 +480,7 @@ function ConnectModal({ onClose, onConnected }: {
                   value={phoneInput}
                   onChange={e => setPhoneInput(e.target.value)}
                   onBlur={e => setPhoneInput(formatPhone(e.target.value))}
-                  placeholder="212612345678"
+                  placeholder="Ex: 0625869380 ou +212625869380"
                   className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 />
                 <button
@@ -477,7 +489,7 @@ function ConnectModal({ onClose, onConnected }: {
                   className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
                 >
                   {pairingLoading
-                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /><span className="ml-1 text-xs">Génération...</span></>
                     : 'OK'}
                 </button>
               </div>
@@ -516,9 +528,13 @@ function ConnectModal({ onClose, onConnected }: {
               </button>
             )}
 
-            <p className="text-xs text-gray-500 leading-relaxed">
-              Ouvrez WhatsApp → <strong>Appareils connectés</strong> → <strong>Lier avec le numéro de téléphone</strong> → saisissez ce code.
-            </p>
+            <ol className="text-xs text-gray-500 leading-relaxed space-y-0.5 list-decimal list-inside">
+              <li>Ouvrez <strong>WhatsApp</strong> sur votre téléphone</li>
+              <li>Allez dans <strong>Paramètres → Appareils connectés</strong></li>
+              <li>Appuyez sur <strong>Connecter un appareil</strong></li>
+              <li>Choisissez <strong>Lier avec un numéro de téléphone</strong></li>
+              <li>Saisissez le code ci-dessus</li>
+            </ol>
           </div>
         )}
       </div>
