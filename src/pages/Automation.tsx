@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Bot, Wifi, WifiOff, X, QrCode, Hash, Check, ImagePlus, Loader2, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
@@ -230,7 +230,8 @@ function ConnectModal({ onClose, onConnected }: {
 }) {
   const [tab, setTab] = useState<'qr' | 'code'>('qr')
   const [qr, setQr] = useState<string | null>(null)
-  const [qrLoading, setQrLoading] = useState(false)
+  const [qrLoading, setQrLoading] = useState(true)
+  const [loadingMsg, setLoadingMsg] = useState('Initialisation en cours...')
   const [pairingCode, setPairingCode] = useState<string | null>(null)
   const [phoneInput, setPhoneInput] = useState('')
   const [pairingLoading, setPairingLoading] = useState(false)
@@ -239,38 +240,74 @@ function ConnectModal({ onClose, onConnected }: {
   const countdownRef = useRef<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Refs that survive across renders without triggering re-runs
+  const connectCalledRef = useRef(false)  // prevents double POST /connect
+  const qrReceivedRef = useRef(false)     // tracks fast→slow poll transition
   const qrIntervalRef = useRef<number | null>(null)
   const statusIntervalRef = useRef<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
 
-    // POST /connect on modal open — creates Evolution instance and gets first QR
-    async function connect() {
-      setQrLoading(true)
-      setError(null)
-      try {
-        const { qr: qrData } = await apiPost('/api/whatsapp/connect', {})
-        if (!cancelled) setQr(qrData as string | null)
-      } catch {
-        if (!cancelled) setError("Impossible de créer l'instance WhatsApp. Réessayez.")
-      } finally {
-        if (!cancelled) setQrLoading(false)
+    // Loading message progression
+    const t1 = window.setTimeout(() => {
+      if (!cancelled) setLoadingMsg('Connexion à WhatsApp...')
+    }, 5_000)
+    const t2 = window.setTimeout(() => {
+      if (!cancelled) setLoadingMsg('Presque prêt, encore quelques secondes...')
+    }, 12_000)
+
+    // Called whenever a valid QR string arrives — handles fast→slow poll switch
+    function handleQr(raw: string) {
+      setQr(raw)
+      setQrLoading(false)
+      if (!qrReceivedRef.current) {
+        qrReceivedRef.current = true
+        // Cancel the 3s fast poll and start the 20s slow refresh
+        if (qrIntervalRef.current !== null) {
+          clearInterval(qrIntervalRef.current)
+          qrIntervalRef.current = null
+        }
+        qrIntervalRef.current = window.setInterval(async () => {
+          if (cancelled) return
+          try {
+            const { qr: fresh } = await apiGet('/api/whatsapp/qr')
+            if (!cancelled && fresh) setQr(fresh as string)
+          } catch { /* silent — keep showing last QR */ }
+        }, 20_000)
       }
     }
 
-    connect()
+    // POST /connect exactly once — connectCalledRef guards against StrictMode
+    // double-invoke and any parent re-renders that might remount this effect
+    if (!connectCalledRef.current) {
+      connectCalledRef.current = true
+      setQrLoading(true)
+      setError(null)
+      apiPost('/api/whatsapp/connect', {})
+        .then(({ qr: qrData }) => {
+          if (!cancelled && qrData) handleQr(qrData as string)
+          // If connect() returned no QR yet, the 3s fast poll below will pick it up
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setError("Impossible de créer l'instance WhatsApp. Réessayez.")
+            setQrLoading(false)
+          }
+        })
+    }
 
-    // Refresh QR every 20 s (QR codes expire)
+    // Fast QR poll every 3s — fires immediately and keeps going until QR is received,
+    // at which point handleQr() clears this interval and starts the 20s slow refresh
     qrIntervalRef.current = window.setInterval(async () => {
-      if (cancelled) return
+      if (cancelled || qrReceivedRef.current) return
       try {
         const { qr: fresh } = await apiGet('/api/whatsapp/qr')
-        if (!cancelled && fresh) setQr(fresh as string)
-      } catch { /* silent — keep showing last QR */ }
-    }, 20_000)
+        if (!cancelled && fresh) handleQr(fresh as string)
+      } catch { /* silent */ }
+    }, 3_000)
 
-    // Poll connection status every 5 s
+    // Status poll every 5s
     statusIntervalRef.current = window.setInterval(async () => {
       if (cancelled) return
       try {
@@ -281,6 +318,8 @@ function ConnectModal({ onClose, onConnected }: {
 
     return () => {
       cancelled = true
+      clearTimeout(t1)
+      clearTimeout(t2)
       if (qrIntervalRef.current !== null) clearInterval(qrIntervalRef.current)
       if (statusIntervalRef.current !== null) clearInterval(statusIntervalRef.current)
       if (countdownRef.current !== null) clearInterval(countdownRef.current)
@@ -396,9 +435,9 @@ function ConnectModal({ onClose, onConnected }: {
           <div className="flex flex-col items-center gap-3">
             <div className="w-48 h-48 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
               {qrLoading ? (
-                <div className="flex flex-col items-center gap-2 text-gray-400">
-                  <QrCode className="h-10 w-10 animate-pulse" />
-                  <span className="text-xs">Génération en cours…</span>
+                <div className="flex flex-col items-center gap-2 text-gray-400 px-4 text-center">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                  <span className="text-xs">{loadingMsg}</span>
                 </div>
               ) : qr ? (
                 <img
@@ -494,6 +533,7 @@ export default function Automation() {
   const [connected, setConnected] = useState(false)
   const [statusLoaded, setStatusLoaded] = useState(false)
   const [showModal, setShowModal] = useState(false)
+  const [connectPending, setConnectPending] = useState(false)
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
 
@@ -537,11 +577,14 @@ export default function Automation() {
     }
   }
 
-  function handleConnected() {
+  const handleConnected = useCallback(() => {
     setConnected(true)
     setShowModal(false)
+    setConnectPending(false)
     showToast('WhatsApp connecté avec succès !', true)
-  }
+  // showToast is stable (defined in same component scope, only calls setToast)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function handleDisconnect() {
     setDisconnecting(true)
@@ -589,9 +632,11 @@ export default function Automation() {
                 </button>
               )}
               <button
-                onClick={() => setShowModal(true)}
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors"
+                onClick={() => { setConnectPending(true); setShowModal(true) }}
+                disabled={connectPending || showModal}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
               >
+                {connectPending && !showModal && <Loader2 className="h-4 w-4 animate-spin" />}
                 {connected ? 'Reconnecter' : 'Connecter WhatsApp'}
               </button>
             </div>
@@ -712,7 +757,7 @@ export default function Automation() {
 
       {showModal && (
         <ConnectModal
-          onClose={() => setShowModal(false)}
+          onClose={() => { setShowModal(false); setConnectPending(false) }}
           onConnected={handleConnected}
         />
       )}
