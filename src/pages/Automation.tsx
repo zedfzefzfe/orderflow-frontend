@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Bot, Wifi, WifiOff, X, QrCode, Hash, Check, ImagePlus, Loader2, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
+import { Bot, Wifi, WifiOff, X, QrCode, ImagePlus, Loader2, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
 
@@ -228,22 +228,13 @@ function ConnectModal({ onClose, onConnected }: {
   onClose: () => void
   onConnected: () => void
 }) {
-  const [tab, setTab] = useState<'qr' | 'code'>('qr')
   const [qr, setQr] = useState<string | null>(null)
   const [qrLoading, setQrLoading] = useState(true)
   const [loadingMsg, setLoadingMsg] = useState('Initialisation en cours...')
-  const [pairingCode, setPairingCode] = useState<string | null>(null)
-  const [phoneInput, setPhoneInput] = useState('')
-  const [pairingLoading, setPairingLoading] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [countdown, setCountdown] = useState<number | null>(null)
-  const countdownRef = useRef<number | null>(null)
-  const codeStatusIntervalRef = useRef<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Refs that survive across renders without triggering re-runs
-  const connectCalledRef = useRef(false)  // prevents double POST /connect
-  const qrReceivedRef = useRef(false)     // tracks fast→slow poll transition
+  const connectCalledRef = useRef(false)
+  const qrReceivedRef = useRef(false)
   const qrIntervalRef = useRef<number | null>(null)
   const statusIntervalRef = useRef<number | null>(null)
 
@@ -323,73 +314,9 @@ function ConnectModal({ onClose, onConnected }: {
       clearTimeout(t2)
       if (qrIntervalRef.current !== null) clearInterval(qrIntervalRef.current)
       if (statusIntervalRef.current !== null) clearInterval(statusIntervalRef.current)
-      if (countdownRef.current !== null) clearInterval(countdownRef.current)
-      if (codeStatusIntervalRef.current !== null) clearInterval(codeStatusIntervalRef.current)
     }
   }, [onConnected])
 
-  // Format phone on blur: strip spaces/dashes/parens, keep leading +
-  function formatPhone(raw: string): string {
-    const digits = raw.replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '')
-    return digits
-  }
-
-  function startCountdown() {
-    if (countdownRef.current !== null) clearInterval(countdownRef.current)
-    setCountdown(60)
-    countdownRef.current = window.setInterval(() => {
-      setCountdown(prev => {
-        if (prev === null || prev <= 1) {
-          clearInterval(countdownRef.current!)
-          countdownRef.current = null
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-  }
-
-  async function fetchPairingCode() {
-    if (!phoneInput.trim()) return
-    if (countdownRef.current !== null) clearInterval(countdownRef.current)
-    if (codeStatusIntervalRef.current !== null) clearInterval(codeStatusIntervalRef.current)
-    setCountdown(null)
-    setPairingLoading(true)
-    setPairingCode(null)
-    setCopied(false)
-    setError(null)
-    try {
-      const { code } = await apiPost('/api/whatsapp/pairing-code-direct', { phoneNumber: phoneInput.trim() })
-      const raw = code as string
-      const formatted = raw.includes('-') ? raw : raw.replace(/^(.{4})(.{4})$/, '$1-$2')
-      setPairingCode(formatted)
-      startCountdown()
-      // Poll status every 3s after showing code — detect when merchant completes link
-      codeStatusIntervalRef.current = window.setInterval(async () => {
-        try {
-          const { connected } = await apiGet('/api/whatsapp/status')
-          if (connected) {
-            if (codeStatusIntervalRef.current !== null) clearInterval(codeStatusIntervalRef.current)
-            onConnected()
-          }
-        } catch { /* silent */ }
-      }, 3_000)
-    } catch (err: unknown) {
-      const msg = (err as { message?: string })?.message ?? ''
-      setError(msg || 'Impossible de générer le code de liaison.')
-    } finally {
-      setPairingLoading(false)
-    }
-  }
-
-  async function copyCode() {
-    if (!pairingCode) return
-    await navigator.clipboard.writeText(pairingCode.replace('-', ''))
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  // Normalize base64: Evolution may return a full data URL or a raw base64 string
   function toImgSrc(raw: string): string {
     return raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`
   }
@@ -409,134 +336,38 @@ function ConnectModal({ onClose, onConnected }: {
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex rounded-xl border border-gray-200 p-1 gap-1">
-          <button
-            onClick={() => setTab('qr')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-colors ${tab === 'qr' ? 'bg-emerald-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-          >
-            <QrCode className="h-3.5 w-3.5" />
-            Scanner le QR code
-          </button>
-          <button
-            onClick={() => setTab('code')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-colors ${tab === 'code' ? 'bg-emerald-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-          >
-            <Hash className="h-3.5 w-3.5" />
-            Lier avec un code
-          </button>
+        {error && (
+          <p className="text-xs text-red-500 bg-red-50 rounded-xl px-3 py-2">{error}</p>
+        )}
+
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-48 h-48 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
+            {qrLoading ? (
+              <div className="flex flex-col items-center gap-2 text-gray-400 px-4 text-center">
+                <Loader2 className="h-8 w-8 animate-spin" />
+                <span className="text-xs">{loadingMsg}</span>
+              </div>
+            ) : qr ? (
+              <img
+                src={toImgSrc(qr)}
+                alt="QR WhatsApp"
+                className="w-full h-full object-contain"
+              />
+            ) : (
+              <div className="flex flex-col items-center gap-2 text-gray-400">
+                <QrCode className="h-10 w-10" />
+                <span className="text-xs text-center px-4">QR indisponible</span>
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 text-center">
+            Ouvrez WhatsApp → <strong>Appareils connectés</strong> → <strong>Lier un appareil</strong> → scannez ce code
+          </p>
+          <p className="text-xs text-gray-400 text-center italic">
+            💻 Pour connecter depuis votre téléphone, ouvrez cette page sur un ordinateur ou demandez à un proche de scanner le QR.
+          </p>
         </div>
 
-        {error && (
-          <div className="flex items-center justify-between gap-2 bg-red-50 rounded-xl px-3 py-2">
-            <p className="text-xs text-red-500 flex-1">{error}</p>
-            {tab === 'code' && (
-              <button
-                onClick={fetchPairingCode}
-                disabled={pairingLoading || !phoneInput.trim()}
-                className="text-xs text-red-600 font-semibold hover:underline disabled:opacity-50 shrink-0"
-              >
-                Réessayer
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Tab content */}
-        {tab === 'qr' ? (
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-48 h-48 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
-              {qrLoading ? (
-                <div className="flex flex-col items-center gap-2 text-gray-400 px-4 text-center">
-                  <Loader2 className="h-8 w-8 animate-spin" />
-                  <span className="text-xs">{loadingMsg}</span>
-                </div>
-              ) : qr ? (
-                <img
-                  src={toImgSrc(qr)}
-                  alt="QR WhatsApp"
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                <div className="flex flex-col items-center gap-2 text-gray-400">
-                  <QrCode className="h-10 w-10" />
-                  <span className="text-xs text-center px-4">QR indisponible</span>
-                </div>
-              )}
-            </div>
-            <p className="text-xs text-gray-400 text-center">
-              Ouvrez WhatsApp → <strong>Appareils connectés</strong> → <strong>Lier un appareil</strong> → scannez ce code
-            </p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Numéro de téléphone
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="tel"
-                  value={phoneInput}
-                  onChange={e => setPhoneInput(e.target.value)}
-                  onBlur={e => setPhoneInput(formatPhone(e.target.value))}
-                  placeholder="Ex: 0625869380 ou +212625869380"
-                  className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                />
-                <button
-                  onClick={fetchPairingCode}
-                  disabled={pairingLoading || !phoneInput.trim() || (countdown !== null && countdown > 0)}
-                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
-                >
-                  {pairingLoading
-                    ? <><Loader2 className="h-4 w-4 animate-spin" /><span className="ml-1 text-xs">Génération...</span></>
-                    : 'OK'}
-                </button>
-              </div>
-            </div>
-
-            {/* Code display */}
-            <div className="flex flex-col items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 py-5 px-4">
-              <span className={`text-2xl font-bold tracking-widest font-mono text-center break-all select-all leading-snug ${pairingCode ? 'text-gray-900' : 'text-gray-300'}`}>
-                {pairingCode ?? '····-····'}
-              </span>
-              {pairingCode && (
-                <div className="flex items-center gap-3 mt-1">
-                  <button
-                    onClick={copyCode}
-                    className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
-                  >
-                    {copied
-                      ? <><Check className="h-3.5 w-3.5" /> Copié !</>
-                      : 'Copier'}
-                  </button>
-                  {countdown !== null && countdown > 0 && (
-                    <span className="text-xs text-gray-400">expire dans {countdown}s</span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Expired state */}
-            {countdown === 0 && (
-              <button
-                onClick={fetchPairingCode}
-                disabled={pairingLoading}
-                className="w-full py-2 rounded-xl border border-emerald-300 text-emerald-700 text-sm font-medium hover:bg-emerald-50 transition-colors"
-              >
-                Obtenir un nouveau code
-              </button>
-            )}
-
-            <ol className="text-xs text-gray-500 leading-relaxed space-y-0.5 list-decimal list-inside">
-              <li>Ouvrez <strong>WhatsApp</strong> sur votre téléphone</li>
-              <li>Allez dans <strong>Paramètres → Appareils connectés</strong></li>
-              <li>Appuyez sur <strong>Connecter un appareil</strong></li>
-              <li>Choisissez <strong>Lier avec un numéro de téléphone</strong></li>
-              <li>Saisissez le code ci-dessus</li>
-            </ol>
-          </div>
-        )}
       </div>
     </div>
   )
