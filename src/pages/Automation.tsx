@@ -446,7 +446,7 @@ function ConnectModal({ onClose, onConnected }: {
 
             {/* Code display */}
             <div className="flex flex-col items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 py-5 px-4">
-              <span className={`text-3xl font-bold tracking-[0.35em] select-all font-mono ${pairingCode ? 'text-gray-900' : 'text-gray-300'}`}>
+              <span className={`text-2xl font-bold tracking-widest font-mono text-center break-all select-all leading-snug ${pairingCode ? 'text-gray-900' : 'text-gray-300'}`}>
                 {pairingCode ?? '····-····'}
               </span>
               {pairingCode && (
