@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
-import { Bot, Wifi, WifiOff, X, QrCode, Hash, Check } from 'lucide-react'
+import { Bot, Wifi, WifiOff, X, QrCode, Hash, Check, ImagePlus, Loader2, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
+import { supabase } from '@/lib/supabase'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface FlowConfig {
   enabled: boolean
-  imageUrl: string
+  imageUrls: string[]
   welcomeMessage: string
   question: string
   replyVous: string
@@ -15,7 +16,7 @@ interface FlowConfig {
 
 const DEFAULT_FLOW: FlowConfig = {
   enabled: false,
-  imageUrl: '',
+  imageUrls: [],
   welcomeMessage: '',
   question: "C'est pour vous ou un cadeau ? 🌸",
   replyVous: '',
@@ -40,6 +41,187 @@ function SectionCard({ icon: Icon, title, children }: {
   )
 }
 
+// ─── Bouquet gallery ──────────────────────────────────────────────────────────
+
+const MAX_IMAGES = 8
+
+interface UploadSlot {
+  id: string
+  blobUrl: string
+  error: string | null
+}
+
+async function uploadToServer(file: File): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  const formData = new FormData()
+  formData.append('image', file)
+  const API_URL = import.meta.env.VITE_API_URL || ''
+  const res = await fetch(`${API_URL}/api/whatsapp/upload-image`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: 'Erreur inconnue' })) as { error?: string }
+    throw new Error(body.error ?? 'Erreur inconnue')
+  }
+  const { url } = await res.json() as { url: string }
+  return url
+}
+
+function BouquetGallery({ values, onChange }: {
+  values: string[]
+  onChange: (urls: string[]) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [slot, setSlot] = useState<UploadSlot | null>(null)
+
+  // One upload at a time: add button hidden while a slot is active
+  const total = values.length + (slot ? 1 : 0)
+  const canAdd = total < MAX_IMAGES && !slot
+
+  function move(idx: number, dir: -1 | 1) {
+    const next = [...values]
+    const swap = idx + dir
+    ;[next[idx], next[swap]] = [next[swap], next[idx]]
+    onChange(next)
+  }
+
+  function remove(idx: number) {
+    onChange(values.filter((_, i) => i !== idx))
+  }
+
+  async function handleFile(file: File) {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2)
+    const blobUrl = URL.createObjectURL(file)
+    setSlot({ id, blobUrl, error: null })
+
+    try {
+      const url = await uploadToServer(file)
+      URL.revokeObjectURL(blobUrl)
+      setSlot(null)
+      onChange([...values, url])
+    } catch (err) {
+      setSlot(s => s?.id === id
+        ? { ...s, error: err instanceof Error ? err.message : 'Erreur' }
+        : s
+      )
+    }
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) handleFile(file)
+    e.target.value = ''
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    const file = e.dataTransfer.files?.[0]
+    if (file && canAdd) handleFile(file)
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-sm font-medium text-gray-700">Photos du bouquet</label>
+        <span className="text-xs text-gray-400">{total}/{MAX_IMAGES}</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {/* Committed images */}
+        {values.map((url, idx) => (
+          <div key={url + idx} className="relative rounded-xl overflow-hidden border border-gray-200 aspect-square bg-gray-50">
+            <img src={url} alt={`Bouquet ${idx + 1}`} className="w-full h-full object-cover" />
+
+            {/* Delete */}
+            <button
+              type="button"
+              onClick={() => remove(idx)}
+              className="absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-gray-900/60 text-white hover:bg-red-500 transition-colors"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+
+            {/* Reorder arrows */}
+            <div className="absolute bottom-1.5 left-1.5 flex gap-1">
+              {idx > 0 && (
+                <button
+                  type="button"
+                  onClick={() => move(idx, -1)}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-900/60 text-white hover:bg-gray-900/80 transition-colors"
+                >
+                  <ChevronUp className="h-3 w-3" />
+                </button>
+              )}
+              {idx < values.length - 1 && (
+                <button
+                  type="button"
+                  onClick={() => move(idx, 1)}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-900/60 text-white hover:bg-gray-900/80 transition-colors"
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {/* Uploading / error slot */}
+        {slot && (
+          <div className="relative rounded-xl overflow-hidden border border-gray-200 aspect-square bg-gray-50">
+            <img src={slot.blobUrl} alt="En cours…" className="w-full h-full object-cover opacity-60" />
+            {slot.error ? (
+              <div className="absolute inset-0 bg-red-50/90 flex flex-col items-center justify-center gap-1.5 px-2">
+                <p className="text-xs text-red-500 text-center leading-tight">{slot.error}</p>
+                <button
+                  type="button"
+                  onClick={() => { URL.revokeObjectURL(slot.blobUrl); setSlot(null) }}
+                  className="text-xs text-red-600 font-medium underline"
+                >
+                  Retirer
+                </button>
+              </div>
+            ) : (
+              <div className="absolute inset-0 bg-white/50 flex items-center justify-center">
+                <Loader2 className="h-6 w-6 text-emerald-600 animate-spin" />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Add button */}
+        {canAdd && (
+          <div
+            onClick={() => inputRef.current?.click()}
+            onDrop={handleDrop}
+            onDragOver={e => e.preventDefault()}
+            className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 aspect-square cursor-pointer hover:bg-emerald-50 hover:border-emerald-300 transition-colors"
+          >
+            <ImagePlus className="h-6 w-6 text-gray-300" />
+            <span className="text-xs text-gray-400 text-center leading-tight">
+              Ajouter<br />une photo
+            </span>
+          </div>
+        )}
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={handleInputChange}
+      />
+
+      {values.length === 0 && !slot && (
+        <p className="text-xs text-gray-400 mt-1">JPEG · PNG · WebP — max 5 Mo par photo · max {MAX_IMAGES} photos</p>
+      )}
+    </div>
+  )
+}
+
 // ─── Connection modal ─────────────────────────────────────────────────────────
 
 function ConnectModal({ onClose, onConnected }: {
@@ -52,6 +234,9 @@ function ConnectModal({ onClose, onConnected }: {
   const [pairingCode, setPairingCode] = useState<string | null>(null)
   const [phoneInput, setPhoneInput] = useState('')
   const [pairingLoading, setPairingLoading] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [countdown, setCountdown] = useState<number | null>(null)
+  const countdownRef = useRef<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const qrIntervalRef = useRef<number | null>(null)
@@ -98,22 +283,59 @@ function ConnectModal({ onClose, onConnected }: {
       cancelled = true
       if (qrIntervalRef.current !== null) clearInterval(qrIntervalRef.current)
       if (statusIntervalRef.current !== null) clearInterval(statusIntervalRef.current)
+      if (countdownRef.current !== null) clearInterval(countdownRef.current)
     }
   }, [onConnected])
 
+  // Format phone on blur: strip spaces/dashes/parens, keep leading +
+  function formatPhone(raw: string): string {
+    const digits = raw.replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '')
+    return digits
+  }
+
+  function startCountdown() {
+    if (countdownRef.current !== null) clearInterval(countdownRef.current)
+    setCountdown(60)
+    countdownRef.current = window.setInterval(() => {
+      setCountdown(prev => {
+        if (prev === null || prev <= 1) {
+          clearInterval(countdownRef.current!)
+          countdownRef.current = null
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+  }
+
   async function fetchPairingCode() {
     if (!phoneInput.trim()) return
+    if (countdownRef.current !== null) clearInterval(countdownRef.current)
+    setCountdown(null)
     setPairingLoading(true)
     setPairingCode(null)
+    setCopied(false)
     setError(null)
     try {
       const { code } = await apiPost('/api/whatsapp/pairing-code', { phoneNumber: phoneInput.trim() })
-      setPairingCode(code as string)
-    } catch {
-      setError('Impossible de récupérer le code de liaison.')
+      // Format as XXXX-XXXX if 8 chars without separator
+      const raw = code as string
+      const formatted = raw.includes('-') ? raw : raw.replace(/^(.{4})(.{4})$/, '$1-$2')
+      setPairingCode(formatted)
+      startCountdown()
+    } catch (err: unknown) {
+      const msg = (err as { message?: string })?.message ?? ''
+      setError(msg || 'Impossible de récupérer le code de liaison.')
     } finally {
       setPairingLoading(false)
     }
+  }
+
+  async function copyCode() {
+    if (!pairingCode) return
+    await navigator.clipboard.writeText(pairingCode.replace('-', ''))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   // Normalize base64: Evolution may return a full data URL or a raw base64 string
@@ -155,7 +377,18 @@ function ConnectModal({ onClose, onConnected }: {
         </div>
 
         {error && (
-          <p className="text-xs text-red-500 bg-red-50 rounded-xl px-3 py-2">{error}</p>
+          <div className="flex items-center justify-between gap-2 bg-red-50 rounded-xl px-3 py-2">
+            <p className="text-xs text-red-500 flex-1">{error}</p>
+            {tab === 'code' && (
+              <button
+                onClick={fetchPairingCode}
+                disabled={pairingLoading || !phoneInput.trim()}
+                className="text-xs text-red-600 font-semibold hover:underline disabled:opacity-50 shrink-0"
+              >
+                Réessayer
+              </button>
+            )}
+          </div>
         )}
 
         {/* Tab content */}
@@ -195,23 +428,55 @@ function ConnectModal({ onClose, onConnected }: {
                   type="tel"
                   value={phoneInput}
                   onChange={e => setPhoneInput(e.target.value)}
+                  onBlur={e => setPhoneInput(formatPhone(e.target.value))}
                   placeholder="212612345678"
                   className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 />
                 <button
                   onClick={fetchPairingCode}
-                  disabled={pairingLoading || !phoneInput.trim()}
+                  disabled={pairingLoading || !phoneInput.trim() || (countdown !== null && countdown > 0)}
                   className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
                 >
-                  {pairingLoading ? '…' : 'OK'}
+                  {pairingLoading
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : 'OK'}
                 </button>
               </div>
             </div>
-            <div className="flex items-center justify-center rounded-xl border border-gray-200 bg-gray-50 py-5">
-              <span className={`text-3xl font-bold tracking-[0.35em] select-all ${pairingCode ? 'text-gray-900' : 'text-gray-300'}`}>
-                {pairingCode ?? '········'}
+
+            {/* Code display */}
+            <div className="flex flex-col items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 py-5 px-4">
+              <span className={`text-3xl font-bold tracking-[0.35em] select-all font-mono ${pairingCode ? 'text-gray-900' : 'text-gray-300'}`}>
+                {pairingCode ?? '····-····'}
               </span>
+              {pairingCode && (
+                <div className="flex items-center gap-3 mt-1">
+                  <button
+                    onClick={copyCode}
+                    className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+                  >
+                    {copied
+                      ? <><Check className="h-3.5 w-3.5" /> Copié !</>
+                      : 'Copier'}
+                  </button>
+                  {countdown !== null && countdown > 0 && (
+                    <span className="text-xs text-gray-400">expire dans {countdown}s</span>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Expired state */}
+            {countdown === 0 && (
+              <button
+                onClick={fetchPairingCode}
+                disabled={pairingLoading}
+                className="w-full py-2 rounded-xl border border-emerald-300 text-emerald-700 text-sm font-medium hover:bg-emerald-50 transition-colors"
+              >
+                Obtenir un nouveau code
+              </button>
+            )}
+
             <p className="text-xs text-gray-500 leading-relaxed">
               Ouvrez WhatsApp → <strong>Appareils connectés</strong> → <strong>Lier avec le numéro de téléphone</strong> → saisissez ce code.
             </p>
@@ -242,7 +507,14 @@ export default function Automation() {
       .catch(() => setStatusLoaded(true))
 
     apiGet('/api/whatsapp/flow')
-      .then(config => setFlow({ ...DEFAULT_FLOW, ...(config as Partial<FlowConfig>) }))
+      .then(raw => {
+        const c = raw as Record<string, unknown>
+        // Backward compat: old format stored imageUrl (string), new format uses imageUrls (array)
+        const imageUrls = Array.isArray(c.imageUrls) && (c.imageUrls as string[]).length > 0
+          ? (c.imageUrls as string[])
+          : typeof c.imageUrl === 'string' && c.imageUrl ? [c.imageUrl] : []
+        setFlow({ ...DEFAULT_FLOW, ...(c as Partial<FlowConfig>), imageUrls })
+      })
       .catch(() => { /* keep defaults */ })
   }, [])
 
@@ -319,19 +591,11 @@ export default function Automation() {
               </button>
             </div>
 
-            {/* Image URL — accepts a public URL for now */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">URL de la photo du bouquet</label>
-              <input
-                type="url"
-                value={flow.imageUrl}
-                onChange={e => setFlow(f => ({ ...f, imageUrl: e.target.value }))}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                placeholder="https://exemple.com/bouquet.jpg"
-              />
-              {/* TODO: replace with file upload to Supabase Storage (or similar CDN) once image hosting is set up */}
-              <p className="text-xs text-gray-400 mt-1">Collez l'URL publique de votre image.</p>
-            </div>
+            {/* Bouquet gallery */}
+            <BouquetGallery
+              values={flow.imageUrls}
+              onChange={urls => setFlow(f => ({ ...f, imageUrls: urls }))}
+            />
 
             {/* Welcome message */}
             <div>
