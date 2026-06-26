@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Bot, Wifi, WifiOff, X, QrCode, Hash, Check, ImagePlus, Loader2, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
-import { apiGet, apiPost, apiPut } from '@/lib/api'
+import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -494,6 +494,8 @@ export default function Automation() {
   const [connected, setConnected] = useState(false)
   const [statusLoaded, setStatusLoaded] = useState(false)
   const [showModal, setShowModal] = useState(false)
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false)
+  const [disconnecting, setDisconnecting] = useState(false)
 
   // Card 2 — welcome flow form
   const [flow, setFlow] = useState<FlowConfig>(DEFAULT_FLOW)
@@ -541,6 +543,20 @@ export default function Automation() {
     showToast('WhatsApp connecté avec succès !', true)
   }
 
+  async function handleDisconnect() {
+    setDisconnecting(true)
+    try {
+      await apiDelete('/api/whatsapp/disconnect')
+      setConnected(false)
+      setShowDisconnectConfirm(false)
+      showToast('WhatsApp déconnecté', true)
+    } catch {
+      showToast('Erreur lors de la déconnexion', false)
+    } finally {
+      setDisconnecting(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <main className="max-w-2xl mx-auto px-4 py-8 space-y-6">
@@ -563,14 +579,52 @@ export default function Automation() {
                 {!statusLoaded ? '…' : connected ? 'Connecté ✅' : 'Non connecté'}
               </span>
             </div>
-            <button
-              onClick={() => setShowModal(true)}
-              className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors"
-            >
-              {connected ? 'Reconnecter' : 'Connecter WhatsApp'}
-            </button>
+            <div className="flex items-center gap-2">
+              {connected && (
+                <button
+                  onClick={() => setShowDisconnectConfirm(true)}
+                  className="px-5 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors"
+                >
+                  Déconnecter
+                </button>
+              )}
+              <button
+                onClick={() => setShowModal(true)}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors"
+              >
+                {connected ? 'Reconnecter' : 'Connecter WhatsApp'}
+              </button>
+            </div>
           </div>
         </SectionCard>
+
+        {/* ── Disconnect confirmation dialog ── */}
+        {showDisconnectConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-xs p-6 space-y-4">
+              <h3 className="font-semibold text-gray-900">Déconnecter WhatsApp</h3>
+              <p className="text-sm text-gray-500">
+                Êtes-vous sûr de vouloir déconnecter ce numéro WhatsApp ?
+              </p>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setShowDisconnectConfirm(false)}
+                  disabled={disconnecting}
+                  className="flex-1 py-2 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleDisconnect}
+                  disabled={disconnecting}
+                  className="flex-1 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors disabled:opacity-50"
+                >
+                  {disconnecting ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Déconnecter'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Card 2: Welcome message flow ── */}
         <SectionCard icon={Bot} title="Message de bienvenue automatique">
