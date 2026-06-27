@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Bot, Wifi, WifiOff, X, QrCode, ImagePlus, Loader2, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
+import { Bot, Wifi, WifiOff, X, QrCode, Check, ImagePlus, Loader2, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
 

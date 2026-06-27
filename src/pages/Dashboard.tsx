@@ -2040,7 +2040,7 @@ export default function Dashboard() {
     setIsFiltering(false)
   }
 
-  const applyQuickFilter = (days: number | string) => {
+  const _applyQuickFilter = (days: number | string) => {
     const today = new Date()
     const todayStr = today.toISOString().split('T')[0]
     if (days === 0) {
