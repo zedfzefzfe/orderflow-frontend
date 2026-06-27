@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Bot, Wifi, WifiOff, X, QrCode, Check, ImagePlus, Loader2, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
+import { Bot, Wifi, WifiOff, X, QrCode, Check, ImagePlus, Loader2, Trash2, ChevronUp, ChevronDown, Smartphone } from 'lucide-react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
 
@@ -233,6 +233,11 @@ function ConnectModal({ onClose, onConnected }: {
   const [loadingMsg, setLoadingMsg] = useState('Initialisation en cours...')
   const [error, setError] = useState<string | null>(null)
 
+  const [showSendQr, setShowSendQr] = useState(false)
+  const [sendQrPhone, setSendQrPhone] = useState('')
+  const [sendQrLoading, setSendQrLoading] = useState(false)
+  const [sendQrResult, setSendQrResult] = useState<'success' | 'error' | null>(null)
+
   const connectCalledRef = useRef(false)
   const qrReceivedRef = useRef(false)
   const qrIntervalRef = useRef<number | null>(null)
@@ -321,6 +326,21 @@ function ConnectModal({ onClose, onConnected }: {
     return raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`
   }
 
+  async function handleSendQr() {
+    if (!sendQrPhone.trim() || !qr) return
+    setSendQrLoading(true)
+    setSendQrResult(null)
+    try {
+      await apiPost('/api/whatsapp/send-qr', { recipientNumber: sendQrPhone.trim(), qrBase64: qr })
+      setSendQrResult('success')
+      setSendQrPhone('')
+    } catch {
+      setSendQrResult('error')
+    } finally {
+      setSendQrLoading(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-5">
@@ -360,6 +380,58 @@ function ConnectModal({ onClose, onConnected }: {
               </div>
             )}
           </div>
+
+          {/* Send QR to another phone — only shown once QR is available */}
+          {!qrLoading && qr && (
+            <div className="w-full">
+              {!showSendQr ? (
+                <button
+                  onClick={() => { setSendQrResult(null); setSendQrPhone(''); setShowSendQr(true) }}
+                  className="w-full text-xs text-indigo-500 flex items-center justify-center gap-1.5 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors"
+                >
+                  <Smartphone className="h-3.5 w-3.5" />
+                  Sur mobile ? Envoyez le QR par WhatsApp
+                </button>
+              ) : (
+                <div className="bg-indigo-50 rounded-xl p-3 space-y-2">
+                  <p className="text-xs font-medium text-indigo-700">Recevoir le QR sur un autre téléphone</p>
+                  {sendQrResult === 'success' ? (
+                    <p className="text-xs text-green-600 text-center py-1">✅ QR envoyé avec succès !</p>
+                  ) : (
+                    <>
+                      <div className="flex gap-2">
+                        <input
+                          type="tel"
+                          placeholder="06 00 00 00 00"
+                          value={sendQrPhone}
+                          onChange={e => setSendQrPhone(e.target.value)}
+                          disabled={sendQrLoading}
+                          className="flex-1 text-xs rounded-lg border border-indigo-200 px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                        />
+                        <button
+                          onClick={handleSendQr}
+                          disabled={sendQrLoading || !sendQrPhone.trim()}
+                          className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 hover:bg-indigo-700 transition-colors flex items-center"
+                        >
+                          {sendQrLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Envoyer'}
+                        </button>
+                      </div>
+                      {sendQrResult === 'error' && (
+                        <p className="text-xs text-red-500">Impossible d'envoyer. Vérifiez le numéro.</p>
+                      )}
+                    </>
+                  )}
+                  <button
+                    onClick={() => setShowSendQr(false)}
+                    className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           <p className="text-xs text-gray-400 text-center">
             Ouvrez WhatsApp → <strong>Appareils connectés</strong> → <strong>Lier un appareil</strong> → scannez ce code
           </p>
