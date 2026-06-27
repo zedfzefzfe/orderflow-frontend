@@ -15,6 +15,7 @@ const useOrderNotifications = () => {
       if (
         currentCount > lastCountRef.current &&
         lastCountRef.current > 0 &&
+        typeof Notification !== 'undefined' &&
         Notification.permission === 'granted'
       ) {
         const data = await apiGet('/api/orders?limit=1')
@@ -41,7 +42,7 @@ const useOrderNotifications = () => {
   }, [])
 
   useEffect(() => {
-    if (Notification.permission === 'default') {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       Notification.requestPermission()
     }
 

@@ -19,6 +19,7 @@ const usePushNotifications = (vapidPublicKey: string) => {
 
     const subscribe = async () => {
       try {
+        if (typeof Notification === 'undefined') return
         const permission = await Notification.requestPermission()
         if (permission !== 'granted') return
 
