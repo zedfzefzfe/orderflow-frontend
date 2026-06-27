@@ -2040,25 +2040,6 @@ export default function Dashboard() {
     setIsFiltering(false)
   }
 
-  const _applyQuickFilter = (days: number | string) => {
-    const today = new Date()
-    const todayStr = today.toISOString().split('T')[0]
-    if (days === 0) {
-      setDateFrom(todayStr)
-      setDateTo(todayStr)
-    } else if (days === 'month') {
-      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
-      setDateFrom(firstDay.toISOString().split('T')[0])
-      setDateTo(todayStr)
-    } else {
-      const from = new Date()
-      from.setDate(from.getDate() - (days as number))
-      setDateFrom(from.toISOString().split('T')[0])
-      setDateTo(todayStr)
-    }
-    setIsFiltering(true)
-  }
-
   const filteredOrders = useMemo(() => {
     let result = orders
     if (isFiltering) {
