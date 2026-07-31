@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { ImagePlus, Loader2, Trash2, Zap } from 'lucide-react'
-import { apiDelete, apiPut, apiUpload } from '@/lib/api'
+import { apiDelete, apiErrorMessage, apiPost, apiPut, apiUpload } from '@/lib/api'
 
 export interface Automation {
   id: string
@@ -38,7 +38,7 @@ function toDraft(a: Automation): Draft {
 export default function AutomationCard({ automation, autoFocus, onSaved, onDeleted, onToast }: {
   automation: Automation
   autoFocus?: boolean
-  onSaved: (a: Automation) => void
+  onSaved: (a: Automation, previousId: string) => void
   onDeleted: (id: string) => void
   onToast: (msg: string, ok: boolean) => void
 }) {
@@ -52,6 +52,9 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // An empty id means this card only exists locally: the server rejects an
+  // automation without a triggerMessage, so it is POSTed on first save
+  const isNew = !automation.id
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
   const remainingSlots = MAX_PHOTOS - draft.photoUrls.length
 
@@ -65,33 +68,46 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
       setError("Donnez un nom à l'automatisation avant d'enregistrer.")
       return
     }
+    if (!draft.triggerMessage.trim()) {
+      setError('Le message pré-rempli déclencheur est obligatoire.')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
-      const updated = unwrapAutomation(await apiPut(`/api/automations/${automation.id}`, draft))
-      const next = toDraft({ ...automation, ...updated })
+      const result = isNew
+        ? unwrapAutomation(await apiPost('/api/automations', { ...draft, priority: automation.priority }))
+        : unwrapAutomation(await apiPut(`/api/automations/${automation.id}`, draft))
+      const merged = { ...automation, ...result }
+      const next = toDraft(merged)
       setDraft(next)
       setSaved(next)
-      onSaved({ ...automation, ...updated })
-      onToast('Automatisation enregistrée', true)
-    } catch {
-      setError("Impossible d'enregistrer. Réessayez.")
-      onToast("Erreur lors de l'enregistrement", false)
+      onSaved(merged, automation.id)
+      onToast(isNew ? 'Automatisation créée' : 'Automatisation enregistrée', true)
+    } catch (err) {
+      const fallback = isNew ? 'Impossible de créer. Réessayez.' : "Impossible d'enregistrer. Réessayez."
+      setError(apiErrorMessage(err, fallback))
+      onToast(isNew ? 'Erreur lors de la création' : "Erreur lors de l'enregistrement", false)
     } finally {
       setSaving(false)
     }
   }
 
   async function handleDelete() {
+    // Nothing to delete server-side for a card that was never created
+    if (isNew) {
+      onDeleted(automation.id)
+      return
+    }
     setDeleting(true)
     try {
       await apiDelete(`/api/automations/${automation.id}`)
       onDeleted(automation.id)
       onToast('Automatisation supprimée', true)
-    } catch {
+    } catch (err) {
       setDeleting(false)
       setConfirmDelete(false)
-      setError('Impossible de supprimer. Réessayez.')
+      setError(apiErrorMessage(err, 'Impossible de supprimer. Réessayez.'))
       onToast('Erreur lors de la suppression', false)
     }
   }
@@ -125,10 +141,10 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
       const photoUrls = res.automation?.photoUrls ?? [...draft.photoUrls, ...(res.urls ?? [])]
       setDraft(d => ({ ...d, photoUrls }))
       setSaved(s => ({ ...s, photoUrls }))
-      onSaved({ ...automation, photoUrls })
+      onSaved({ ...automation, photoUrls }, automation.id)
       onToast(files.length > 1 ? 'Photos ajoutées' : 'Photo ajoutée', true)
-    } catch {
-      setError("L'envoi des photos a échoué. Réessayez.")
+    } catch (err) {
+      setError(apiErrorMessage(err, "L'envoi des photos a échoué. Réessayez."))
       onToast("Erreur lors de l'envoi des photos", false)
     } finally {
       setUploading(false)
@@ -226,7 +242,8 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              disabled={uploading}
+              disabled={uploading || isNew}
+              title={isNew ? "Créez d'abord l'automatisation" : undefined}
               className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 aspect-square hover:bg-emerald-50 hover:border-emerald-300 disabled:opacity-60 transition-colors"
             >
               {uploading ? (
@@ -251,8 +268,9 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
         />
 
         <p className="text-xs text-gray-400 mt-1">
-          JPEG · PNG · WebP · GIF — max 5 Mo par photo · {MAX_PHOTOS} photos maximum.
-          Les photos sont envoyées immédiatement ; une suppression prend effet à l'enregistrement.
+          {isNew
+            ? "Créez d'abord l'automatisation — les photos pourront ensuite être ajoutées."
+            : `JPEG · PNG · WebP · GIF — max 5 Mo par photo · ${MAX_PHOTOS} photos maximum. Les photos sont envoyées immédiatement ; une suppression prend effet à l'enregistrement.`}
         </p>
       </div>
 
@@ -261,7 +279,7 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
       )}
 
       {/* Actions */}
-      {confirmDelete ? (
+      {confirmDelete && !isNew ? (
         <div className="rounded-xl bg-red-50 border border-red-100 p-3 space-y-2.5">
           <p className="text-sm text-red-700">
             Supprimer « {draft.name.trim() || 'cette automatisation'} » ? Cette action est irréversible.
@@ -286,21 +304,20 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
       ) : (
         <div className="flex items-center justify-between gap-3 pt-1">
           <button
-            onClick={() => setConfirmDelete(true)}
+            onClick={() => (isNew ? handleDelete() : setConfirmDelete(true))}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-red-500 text-sm font-medium hover:bg-red-50 transition-colors"
           >
-            <Trash2 className="h-4 w-4" />
-            Supprimer
+            {isNew ? 'Annuler' : <><Trash2 className="h-4 w-4" />Supprimer</>}
           </button>
           <div className="flex items-center gap-3">
-            {dirty && <span className="text-xs text-amber-600">Modifications non enregistrées</span>}
+            {dirty && !isNew && <span className="text-xs text-amber-600">Modifications non enregistrées</span>}
             <button
               onClick={handleSave}
               disabled={saving || uploading}
               className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
             >
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {saving ? 'Enregistrement…' : 'Enregistrer'}
+              {saving ? (isNew ? 'Création…' : 'Enregistrement…') : (isNew ? 'Créer' : 'Enregistrer')}
             </button>
           </div>
         </div>

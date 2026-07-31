@@ -7,6 +7,17 @@ async function getToken() {
   return data.session?.access_token
 }
 
+/** The api* helpers throw Error(responseBody) — pull the readable message out of it. */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  const raw = err instanceof Error ? err.message : ''
+  try {
+    const parsed = JSON.parse(raw) as { error?: string; message?: string }
+    if (parsed?.error) return parsed.error
+    if (parsed?.message) return parsed.message
+  } catch { /* body was not JSON */ }
+  return fallback
+}
+
 export async function apiDelete(path: string) {
   const token = await getToken()
   const res = await fetch(`${API_URL}${path}`, {

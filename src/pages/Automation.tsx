@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Bot, Wifi, WifiOff, X, QrCode, Check, Loader2, Plus, Smartphone } from 'lucide-react'
 import { apiGet, apiPost, apiDelete } from '@/lib/api'
-import AutomationCard, { AutomationsEmptyState, unwrapAutomation, type Automation as AutomationItem } from '@/components/AutomationCard'
+import AutomationCard, { AutomationsEmptyState, type Automation as AutomationItem } from '@/components/AutomationCard'
 
 // ─── Card shell ───────────────────────────────────────────────────────────────
 
@@ -259,9 +259,10 @@ export default function Automation() {
   const [automations, setAutomations] = useState<AutomationItem[]>([])
   const [listLoading, setListLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
-  const [newId, setNewId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+
+  // Only one uncreated card at a time, so its React key stays unambiguous
+  const hasDraft = automations.some(a => !a.id)
 
   // On mount: load connection status + automations
   useEffect(() => {
@@ -292,38 +293,29 @@ export default function Automation() {
     setTimeout(() => setToast(null), 2500)
   }
 
-  // Create first, then let the user fill it in — photo upload is scoped to an
-  // existing :id, so an automation must exist on the server before any upload
-  async function handleCreate() {
-    setCreating(true)
+  // The server requires a triggerMessage, so a new automation starts as a local
+  // card (id: '') and is POSTed by the card itself on « Créer ». Photos come
+  // after, since the upload route is scoped to an existing :id.
+  function handleCreate() {
+    if (hasDraft) return
     setListError(null)
-    try {
-      const created = unwrapAutomation(await apiPost('/api/automations', {
-        name: 'Nouvelle automatisation',
-        triggerMessage: '',
-        welcomeMessage: '',
-        photoUrls: [],
-        isActive: false,
-        priority: automations.length,
-      }))
-      setAutomations(list => [...list, created])
-      setNewId(created.id)
-      showToast('Automatisation créée — complétez-la puis enregistrez', true)
-    } catch {
-      setListError("La création a échoué. Réessayez.")
-      showToast('Erreur lors de la création', false)
-    } finally {
-      setCreating(false)
-    }
+    setAutomations(list => [...list, {
+      id: '',
+      name: '',
+      triggerMessage: '',
+      welcomeMessage: '',
+      photoUrls: [],
+      isActive: true,
+      priority: list.length,
+    }])
   }
 
-  function handleSaved(updated: AutomationItem) {
-    setAutomations(list => list.map(a => (a.id === updated.id ? { ...a, ...updated } : a)))
+  function handleSaved(updated: AutomationItem, previousId: string) {
+    setAutomations(list => list.map(a => (a.id === previousId ? { ...a, ...updated } : a)))
   }
 
   function handleDeleted(id: string) {
     setAutomations(list => list.filter(a => a.id !== id))
-    if (newId === id) setNewId(null)
   }
 
   const handleConnected = useCallback(() => {
@@ -430,10 +422,10 @@ export default function Automation() {
           </div>
           <button
             onClick={handleCreate}
-            disabled={creating}
+            disabled={hasDraft}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-semibold transition-colors shrink-0"
           >
-            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            <Plus className="h-4 w-4" />
             Nouvelle automatisation
           </button>
         </div>
@@ -459,9 +451,9 @@ export default function Automation() {
         ) : (
           automations.map(a => (
             <AutomationCard
-              key={a.id}
+              key={a.id || 'new'}
               automation={a}
-              autoFocus={a.id === newId}
+              autoFocus={!a.id}
               onSaved={handleSaved}
               onDeleted={handleDeleted}
               onToast={showToast}
