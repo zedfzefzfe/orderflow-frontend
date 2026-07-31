@@ -1,27 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Bot, Wifi, WifiOff, X, QrCode, Check, ImagePlus, Loader2, Trash2, ChevronUp, ChevronDown, Smartphone } from 'lucide-react'
-import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api'
-import { supabase } from '@/lib/supabase'
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface FlowConfig {
-  enabled: boolean
-  imageUrls: string[]
-  welcomeMessage: string
-  question: string
-  replyVous: string
-  replyCadeau: string
-}
-
-const DEFAULT_FLOW: FlowConfig = {
-  enabled: false,
-  imageUrls: [],
-  welcomeMessage: '',
-  question: "C'est pour vous ou un cadeau ? 🌸",
-  replyVous: '',
-  replyCadeau: '',
-}
+import { Bot, Wifi, WifiOff, X, QrCode, Check, Loader2, Plus, Smartphone } from 'lucide-react'
+import { apiGet, apiPost, apiDelete } from '@/lib/api'
+import AutomationCard, { AutomationsEmptyState, unwrapAutomation, type Automation as AutomationItem } from '@/components/AutomationCard'
 
 // ─── Card shell ───────────────────────────────────────────────────────────────
 
@@ -37,187 +17,6 @@ function SectionCard({ icon: Icon, title, children }: {
         <h2 className="text-base font-semibold text-gray-900">{title}</h2>
       </div>
       {children}
-    </div>
-  )
-}
-
-// ─── Bouquet gallery ──────────────────────────────────────────────────────────
-
-const MAX_IMAGES = 8
-
-interface UploadSlot {
-  id: string
-  blobUrl: string
-  error: string | null
-}
-
-async function uploadToServer(file: File): Promise<string> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  const formData = new FormData()
-  formData.append('image', file)
-  const API_URL = import.meta.env.VITE_API_URL || ''
-  const res = await fetch(`${API_URL}/api/whatsapp/upload-image`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: 'Erreur inconnue' })) as { error?: string }
-    throw new Error(body.error ?? 'Erreur inconnue')
-  }
-  const { url } = await res.json() as { url: string }
-  return url
-}
-
-function BouquetGallery({ values, onChange }: {
-  values: string[]
-  onChange: (urls: string[]) => void
-}) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [slot, setSlot] = useState<UploadSlot | null>(null)
-
-  // One upload at a time: add button hidden while a slot is active
-  const total = values.length + (slot ? 1 : 0)
-  const canAdd = total < MAX_IMAGES && !slot
-
-  function move(idx: number, dir: -1 | 1) {
-    const next = [...values]
-    const swap = idx + dir
-    ;[next[idx], next[swap]] = [next[swap], next[idx]]
-    onChange(next)
-  }
-
-  function remove(idx: number) {
-    onChange(values.filter((_, i) => i !== idx))
-  }
-
-  async function handleFile(file: File) {
-    const id = Date.now().toString(36) + Math.random().toString(36).slice(2)
-    const blobUrl = URL.createObjectURL(file)
-    setSlot({ id, blobUrl, error: null })
-
-    try {
-      const url = await uploadToServer(file)
-      URL.revokeObjectURL(blobUrl)
-      setSlot(null)
-      onChange([...values, url])
-    } catch (err) {
-      setSlot(s => s?.id === id
-        ? { ...s, error: err instanceof Error ? err.message : 'Erreur' }
-        : s
-      )
-    }
-  }
-
-  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file) handleFile(file)
-    e.target.value = ''
-  }
-
-  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault()
-    const file = e.dataTransfer.files?.[0]
-    if (file && canAdd) handleFile(file)
-  }
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <label className="text-sm font-medium text-gray-700">Photos du bouquet</label>
-        <span className="text-xs text-gray-400">{total}/{MAX_IMAGES}</span>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        {/* Committed images */}
-        {values.map((url, idx) => (
-          <div key={url + idx} className="relative rounded-xl overflow-hidden border border-gray-200 aspect-square bg-gray-50">
-            <img src={url} alt={`Bouquet ${idx + 1}`} className="w-full h-full object-cover" />
-
-            {/* Delete */}
-            <button
-              type="button"
-              onClick={() => remove(idx)}
-              className="absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-gray-900/60 text-white hover:bg-red-500 transition-colors"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
-
-            {/* Reorder arrows */}
-            <div className="absolute bottom-1.5 left-1.5 flex gap-1">
-              {idx > 0 && (
-                <button
-                  type="button"
-                  onClick={() => move(idx, -1)}
-                  className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-900/60 text-white hover:bg-gray-900/80 transition-colors"
-                >
-                  <ChevronUp className="h-3 w-3" />
-                </button>
-              )}
-              {idx < values.length - 1 && (
-                <button
-                  type="button"
-                  onClick={() => move(idx, 1)}
-                  className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-900/60 text-white hover:bg-gray-900/80 transition-colors"
-                >
-                  <ChevronDown className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-
-        {/* Uploading / error slot */}
-        {slot && (
-          <div className="relative rounded-xl overflow-hidden border border-gray-200 aspect-square bg-gray-50">
-            <img src={slot.blobUrl} alt="En cours…" className="w-full h-full object-cover opacity-60" />
-            {slot.error ? (
-              <div className="absolute inset-0 bg-red-50/90 flex flex-col items-center justify-center gap-1.5 px-2">
-                <p className="text-xs text-red-500 text-center leading-tight">{slot.error}</p>
-                <button
-                  type="button"
-                  onClick={() => { URL.revokeObjectURL(slot.blobUrl); setSlot(null) }}
-                  className="text-xs text-red-600 font-medium underline"
-                >
-                  Retirer
-                </button>
-              </div>
-            ) : (
-              <div className="absolute inset-0 bg-white/50 flex items-center justify-center">
-                <Loader2 className="h-6 w-6 text-emerald-600 animate-spin" />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Add button */}
-        {canAdd && (
-          <div
-            onClick={() => inputRef.current?.click()}
-            onDrop={handleDrop}
-            onDragOver={e => e.preventDefault()}
-            className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 aspect-square cursor-pointer hover:bg-emerald-50 hover:border-emerald-300 transition-colors"
-          >
-            <ImagePlus className="h-6 w-6 text-gray-300" />
-            <span className="text-xs text-gray-400 text-center leading-tight">
-              Ajouter<br />une photo
-            </span>
-          </div>
-        )}
-      </div>
-
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp"
-        className="hidden"
-        onChange={handleInputChange}
-      />
-
-      {values.length === 0 && !slot && (
-        <p className="text-xs text-gray-400 mt-1">JPEG · PNG · WebP — max 5 Mo par photo · max {MAX_IMAGES} photos</p>
-      )}
     </div>
   )
 }
@@ -456,44 +255,75 @@ export default function Automation() {
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
 
-  // Card 2 — welcome flow form
-  const [flow, setFlow] = useState<FlowConfig>(DEFAULT_FLOW)
-  const [saving, setSaving] = useState(false)
+  // Automations list
+  const [automations, setAutomations] = useState<AutomationItem[]>([])
+  const [listLoading, setListLoading] = useState(true)
+  const [listError, setListError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [newId, setNewId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
-  // On mount: load connection status + saved flow config
+  // On mount: load connection status + automations
   useEffect(() => {
     apiGet('/api/whatsapp/status')
       .then(({ connected: c }) => { setConnected(Boolean(c)); setStatusLoaded(true) })
       .catch(() => setStatusLoaded(true))
 
-    apiGet('/api/whatsapp/flow')
-      .then(raw => {
-        const c = raw as Record<string, unknown>
-        // Backward compat: old format stored imageUrl (string), new format uses imageUrls (array)
-        const imageUrls = Array.isArray(c.imageUrls) && (c.imageUrls as string[]).length > 0
-          ? (c.imageUrls as string[])
-          : typeof c.imageUrl === 'string' && c.imageUrl ? [c.imageUrl] : []
-        setFlow({ ...DEFAULT_FLOW, ...(c as Partial<FlowConfig>), imageUrls })
-      })
-      .catch(() => { /* keep defaults */ })
+    loadAutomations()
   }, [])
+
+  async function loadAutomations() {
+    setListLoading(true)
+    setListError(null)
+    try {
+      const raw = await apiGet('/api/automations')
+      // Accept both a bare array and a { automations: [...] } envelope
+      const list = (Array.isArray(raw) ? raw : raw?.automations ?? []) as AutomationItem[]
+      setAutomations([...list].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0)))
+    } catch {
+      setListError('Impossible de charger vos automatisations.')
+    } finally {
+      setListLoading(false)
+    }
+  }
 
   function showToast(msg: string, ok: boolean) {
     setToast({ msg, ok })
     setTimeout(() => setToast(null), 2500)
   }
 
-  async function handleSave() {
-    setSaving(true)
+  // Create first, then let the user fill it in — photo upload is scoped to an
+  // existing :id, so an automation must exist on the server before any upload
+  async function handleCreate() {
+    setCreating(true)
+    setListError(null)
     try {
-      await apiPut('/api/whatsapp/flow', flow)
-      showToast('Paramètres enregistrés', true)
+      const created = unwrapAutomation(await apiPost('/api/automations', {
+        name: 'Nouvelle automatisation',
+        triggerMessage: '',
+        welcomeMessage: '',
+        photoUrls: [],
+        isActive: false,
+        priority: automations.length,
+      }))
+      setAutomations(list => [...list, created])
+      setNewId(created.id)
+      showToast('Automatisation créée — complétez-la puis enregistrez', true)
     } catch {
-      showToast('Erreur lors de la sauvegarde', false)
+      setListError("La création a échoué. Réessayez.")
+      showToast('Erreur lors de la création', false)
     } finally {
-      setSaving(false)
+      setCreating(false)
     }
+  }
+
+  function handleSaved(updated: AutomationItem) {
+    setAutomations(list => list.map(a => (a.id === updated.id ? { ...a, ...updated } : a)))
+  }
+
+  function handleDeleted(id: string) {
+    setAutomations(list => list.filter(a => a.id !== id))
+    if (newId === id) setNewId(null)
   }
 
   const handleConnected = useCallback(() => {
@@ -590,87 +420,54 @@ export default function Automation() {
           </div>
         )}
 
-        {/* ── Card 2: Welcome message flow ── */}
-        <SectionCard icon={Bot} title="Message de bienvenue automatique">
-          <div className="space-y-4">
-
-            {/* Toggle */}
-            <div className="flex items-center justify-between py-1">
-              <div>
-                <p className="text-sm font-medium text-gray-700">Activer la réponse automatique</p>
-                <p className="text-xs text-gray-400">Envoyé au premier message de chaque nouveau client</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setFlow(f => ({ ...f, enabled: !f.enabled }))}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${flow.enabled ? 'bg-emerald-600' : 'bg-gray-200'}`}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${flow.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
-              </button>
-            </div>
-
-            {/* Bouquet gallery */}
-            <BouquetGallery
-              values={flow.imageUrls}
-              onChange={urls => setFlow(f => ({ ...f, imageUrls: urls }))}
-            />
-
-            {/* Welcome message */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Message de bienvenue</label>
-              <textarea
-                value={flow.welcomeMessage}
-                onChange={e => setFlow(f => ({ ...f, welcomeMessage: e.target.value }))}
-                rows={3}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
-                placeholder="Bonjour 👋 Bienvenue sur notre boutique…"
-              />
-            </div>
-
-            {/* Question */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Question</label>
-              <input
-                type="text"
-                value={flow.question}
-                onChange={e => setFlow(f => ({ ...f, question: e.target.value }))}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400"
-              />
-            </div>
-
-            {/* Reply: pour vous */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Réponse si « pour vous »</label>
-              <textarea
-                value={flow.replyVous}
-                onChange={e => setFlow(f => ({ ...f, replyVous: e.target.value }))}
-                rows={3}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
-                placeholder="Super ! Voici nos créations du moment…"
-              />
-            </div>
-
-            {/* Reply: cadeau */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Réponse si « cadeau »</label>
-              <textarea
-                value={flow.replyCadeau}
-                onChange={e => setFlow(f => ({ ...f, replyCadeau: e.target.value }))}
-                rows={3}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
-                placeholder="Quelle belle attention ! Pour qui est ce cadeau ?…"
-              />
-            </div>
+        {/* ── Automations ── */}
+        <div className="flex items-center justify-between pt-2">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Vos automatisations</h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Une automatisation par pub Meta, déclenchée par son message pré-rempli
+            </p>
           </div>
-
           <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+            onClick={handleCreate}
+            disabled={creating}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-semibold transition-colors shrink-0"
           >
-            {saving ? 'Enregistrement…' : 'Enregistrer'}
+            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            Nouvelle automatisation
           </button>
-        </SectionCard>
+        </div>
+
+        {listError && (
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-red-50 border border-red-100 px-4 py-3">
+            <p className="text-sm text-red-600">{listError}</p>
+            <button
+              onClick={loadAutomations}
+              className="text-sm font-medium text-red-700 underline shrink-0"
+            >
+              Réessayer
+            </button>
+          </div>
+        )}
+
+        {listLoading ? (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-10 flex items-center justify-center">
+            <Loader2 className="h-6 w-6 text-emerald-600 animate-spin" />
+          </div>
+        ) : automations.length === 0 && !listError ? (
+          <AutomationsEmptyState onCreate={handleCreate} />
+        ) : (
+          automations.map(a => (
+            <AutomationCard
+              key={a.id}
+              automation={a}
+              autoFocus={a.id === newId}
+              onSaved={handleSaved}
+              onDeleted={handleDeleted}
+              onToast={showToast}
+            />
+          ))
+        )}
 
       </main>
 

@@ -85,6 +85,18 @@ export async function apiPostBlob(path: string, body: unknown): Promise<Blob> {
   return res.blob()
 }
 
+export async function apiUpload(path: string, formData: FormData) {
+  const token = await getToken()
+  // No Content-Type: the browser sets the multipart boundary itself
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
 export async function apiPut(path: string, body: unknown) {
   const token = await getToken()
   const res = await fetch(`${API_URL}${path}`, {
