@@ -304,6 +304,8 @@ export default function Automation() {
       name: '',
       triggerMessage: '',
       welcomeMessage: '',
+      message2: '',
+      message3: '',
       photoUrls: [],
       videoUrl: null,
       documentUrls: [],

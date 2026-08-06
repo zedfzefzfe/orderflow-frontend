@@ -7,6 +7,8 @@ export interface Automation {
   name: string
   triggerMessage: string
   welcomeMessage: string
+  message2: string
+  message3: string
   photoUrls: string[]
   videoUrl: string | null
   documentUrls: string[]
@@ -52,6 +54,9 @@ function toDraft(a: Automation): Draft {
     name: a.name ?? '',
     triggerMessage: a.triggerMessage ?? '',
     welcomeMessage: a.welcomeMessage ?? '',
+    // Optional follow-ups — absent on automations created before these fields existed
+    message2: a.message2 ?? '',
+    message3: a.message3 ?? '',
     photoUrls: a.photoUrls ?? [],
     videoUrl: a.videoUrl ?? null,
     documentUrls: a.documentUrls ?? [],
@@ -516,6 +521,38 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
             ? "Créez d'abord l'automatisation — la vidéo pourra ensuite être ajoutée."
             : 'MP4 uniquement — max 16 Mo (limite WhatsApp). H.264 + AAC recommandé pour la compatibilité.'}
         </p>
+      </div>
+
+      {/* Follow-up message 2 */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-sm font-medium text-gray-700">Message 2 (après vidéo/PDF)</label>
+          <span className="text-xs text-gray-400">{draft.message2.length} caractères</span>
+        </div>
+        <textarea
+          value={draft.message2}
+          onChange={e => set('message2', e.target.value)}
+          rows={5}
+          placeholder="Voici le catalogue complet 📄 Dites-moi ce qui vous plaît !"
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
+        />
+        <p className="text-xs text-gray-400 mt-1">Optionnel — laissez vide pour ne rien envoyer.</p>
+      </div>
+
+      {/* Follow-up message 3 */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-sm font-medium text-gray-700">Message 3 — question de qualification</label>
+          <span className="text-xs text-gray-400">{draft.message3.length} caractères</span>
+        </div>
+        <textarea
+          value={draft.message3}
+          onChange={e => set('message3', e.target.value)}
+          rows={5}
+          placeholder="Pour quelle pièce cherchez-vous ? Et quelles dimensions ?"
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
+        />
+        <p className="text-xs text-gray-400 mt-1">Optionnel — laissez vide pour ne rien envoyer.</p>
       </div>
 
       {error && (
