@@ -272,8 +272,8 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
     setError(null)
     try {
       const formData = new FormData()
-      files.forEach(f => formData.append('videos', f))
-      const res = await apiUpload(`/api/automations/${automation.id}/videos`, formData) as {
+      files.forEach(f => formData.append('video', f))
+      const res = await apiUpload(`/api/automations/${automation.id}/video`, formData) as {
         urls?: string[]
         url?: string
         automation: Automation
