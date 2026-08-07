@@ -307,7 +307,7 @@ export default function Automation() {
       message2: '',
       message3: '',
       photoUrls: [],
-      videoUrl: null,
+      videoUrls: [],
       documentUrls: [],
       isActive: true,
       priority: list.length,

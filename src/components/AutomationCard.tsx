@@ -10,7 +10,9 @@ export interface Automation {
   message2: string
   message3: string
   photoUrls: string[]
-  videoUrl: string | null
+  videoUrls: string[]
+  /** Legacy single-video field, still present on automations saved before multi-video. */
+  videoUrl?: string | null
   documentUrls: string[]
   isActive: boolean
   priority: number
@@ -24,6 +26,7 @@ export const MAX_DOCS = 2
 const MAX_DOC_SIZE = 16 * 1024 * 1024
 const DOC_ACCEPTED = 'application/pdf'
 
+export const MAX_VIDEOS = 3
 // WhatsApp refuses to play inline video past ~16 Mo
 const MAX_VIDEO_SIZE = 16 * 1024 * 1024
 const VIDEO_ACCEPTED = 'video/mp4'
@@ -58,7 +61,8 @@ function toDraft(a: Automation): Draft {
     message2: a.message2 ?? '',
     message3: a.message3 ?? '',
     photoUrls: a.photoUrls ?? [],
-    videoUrl: a.videoUrl ?? null,
+    // A pre-multi-video automation only has the single videoUrl — lift it into the array
+    videoUrls: a.videoUrls ?? (a.videoUrl ? [a.videoUrl] : []),
     documentUrls: a.documentUrls ?? [],
     isActive: Boolean(a.isActive),
   }
@@ -94,6 +98,7 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
   const remainingSlots = MAX_PHOTOS - draft.photoUrls.length
   const remainingDocs = MAX_DOCS - draft.documentUrls.length
+  const remainingVideos = MAX_VIDEOS - draft.videoUrls.length
   const busy = uploading || uploadingDocs || uploadingVideo
 
   function set<K extends keyof Draft>(key: K, value: Draft[K]) {
@@ -243,17 +248,23 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
     set('documentUrls', draft.documentUrls.filter((_, i) => i !== idx))
   }
 
-  async function handleVideo(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
+  async function handleVideos(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
     e.target.value = ''
-    if (!file) return
+    if (files.length === 0) return
 
-    if (file.type !== VIDEO_ACCEPTED) {
-      setError(`« ${file.name} » n'est pas un MP4.`)
+    if (files.length > remainingVideos) {
+      setError(`${MAX_VIDEOS} vidéos maximum — il reste ${remainingVideos} emplacement${remainingVideos > 1 ? 's' : ''}.`)
       return
     }
-    if (file.size > MAX_VIDEO_SIZE) {
-      setError(`« ${file.name} » dépasse 16 Mo — la limite WhatsApp pour une vidéo.`)
+    const wrongType = files.find(f => f.type !== VIDEO_ACCEPTED)
+    if (wrongType) {
+      setError(`« ${wrongType.name} » n'est pas un MP4.`)
+      return
+    }
+    const tooBig = files.find(f => f.size > MAX_VIDEO_SIZE)
+    if (tooBig) {
+      setError(`« ${tooBig.name} » dépasse 16 Mo — la limite WhatsApp pour une vidéo.`)
       return
     }
 
@@ -261,23 +272,30 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
     setError(null)
     try {
       const formData = new FormData()
-      formData.append('video', file)
-      const res = await apiUpload(`/api/automations/${automation.id}/video`, formData) as {
-        url: string
+      files.forEach(f => formData.append('videos', f))
+      const res = await apiUpload(`/api/automations/${automation.id}/videos`, formData) as {
+        urls?: string[]
+        url?: string
         automation: Automation
       }
-      const videoUrl = res.automation?.videoUrl ?? res.url ?? null
-      if (videoUrl) setSizes(s => ({ ...s, [videoUrl]: file.size }))
-      setDraft(d => ({ ...d, videoUrl }))
-      setSaved(s => ({ ...s, videoUrl }))
-      onSaved({ ...automation, videoUrl }, automation.id)
-      onToast('Vidéo ajoutée', true)
+      // Prefer the server's own array; fall back to appending whatever URLs came back
+      const returned = res.urls ?? (res.url ? [res.url] : [])
+      const videoUrls = res.automation?.videoUrls ?? [...draft.videoUrls, ...returned]
+      setDraft(d => ({ ...d, videoUrls }))
+      setSaved(s => ({ ...s, videoUrls }))
+      onSaved({ ...automation, videoUrls }, automation.id)
+      onToast(files.length > 1 ? 'Vidéos ajoutées' : 'Vidéo ajoutée', true)
     } catch (err) {
       setError(apiErrorMessage(err, "L'envoi de la vidéo a échoué. Réessayez."))
       onToast("Erreur lors de l'envoi de la vidéo", false)
     } finally {
       setUploadingVideo(false)
     }
+  }
+
+  /** Removal is local — persisted with the next « Enregistrer » (PUT videoUrls). */
+  function removeVideo(idx: number) {
+    set('videoUrls', draft.videoUrls.filter((_, i) => i !== idx))
   }
 
   return (
@@ -467,59 +485,57 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
       {/* Video */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="text-sm font-medium text-gray-700">Vidéo envoyée avec le message</label>
-          <span className="text-xs text-gray-400">{draft.videoUrl ? 1 : 0}/1</span>
+          <label className="text-sm font-medium text-gray-700">Vidéos envoyées avec le message</label>
+          <span className="text-xs text-gray-400">{draft.videoUrls.length}/{MAX_VIDEOS}</span>
         </div>
 
-        {draft.videoUrl ? (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 overflow-hidden">
-            <video src={draft.videoUrl} controls className="w-full max-h-52 bg-black" />
-            <div className="flex items-center gap-2.5 px-3 py-2">
-              <Film className="h-4 w-4 text-emerald-600 shrink-0" />
-              <span className="flex-1 min-w-0 truncate text-sm text-gray-700">{fileNameFromUrl(draft.videoUrl)}</span>
-              {sizes[draft.videoUrl] > 0 && (
-                <span className="text-xs text-gray-400 shrink-0">{formatSize(sizes[draft.videoUrl])}</span>
-              )}
+        <div className="grid grid-cols-3 gap-2">
+          {draft.videoUrls.map((url, idx) => (
+            <div key={url + idx} className="relative rounded-xl overflow-hidden border border-gray-200 aspect-square bg-gray-50">
+              <video src={url} controls preload="metadata" className="w-full h-full object-cover bg-black" />
               <button
                 type="button"
-                onClick={() => set('videoUrl', null)}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors shrink-0"
+                onClick={() => removeVideo(idx)}
+                className="absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-gray-900/60 text-white hover:bg-red-500 transition-colors"
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <Trash2 className="h-3 w-3" />
               </button>
             </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => videoRef.current?.click()}
-            disabled={uploadingVideo || isNew}
-            title={isNew ? "Créez d'abord l'automatisation" : undefined}
-            className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 py-3 hover:bg-emerald-50 hover:border-emerald-300 disabled:opacity-60 transition-colors"
-          >
-            {uploadingVideo ? (
-              <Loader2 className="h-5 w-5 text-emerald-600 animate-spin" />
-            ) : (
-              <>
-                <Film className="h-5 w-5 text-gray-300" />
-                <span className="text-xs text-gray-400">Ajouter une vidéo</span>
-              </>
-            )}
-          </button>
-        )}
+          ))}
+
+          {remainingVideos > 0 && (
+            <button
+              type="button"
+              onClick={() => videoRef.current?.click()}
+              disabled={uploadingVideo || isNew}
+              title={isNew ? "Créez d'abord l'automatisation" : undefined}
+              className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 aspect-square hover:bg-emerald-50 hover:border-emerald-300 disabled:opacity-60 transition-colors"
+            >
+              {uploadingVideo ? (
+                <Loader2 className="h-6 w-6 text-emerald-600 animate-spin" />
+              ) : (
+                <>
+                  <Film className="h-6 w-6 text-gray-300" />
+                  <span className="text-xs text-gray-400 text-center leading-tight">Ajouter<br />une vidéo</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
 
         <input
           ref={videoRef}
           type="file"
+          multiple
           accept={VIDEO_ACCEPTED}
           className="hidden"
-          onChange={handleVideo}
+          onChange={handleVideos}
         />
 
         <p className="text-xs text-gray-400 mt-1">
           {isNew
-            ? "Créez d'abord l'automatisation — la vidéo pourra ensuite être ajoutée."
-            : 'MP4 uniquement — max 16 Mo (limite WhatsApp). H.264 + AAC recommandé pour la compatibilité.'}
+            ? "Créez d'abord l'automatisation — les vidéos pourront ensuite être ajoutées."
+            : `MP4 uniquement — max 16 Mo par vidéo (limite WhatsApp) · ${MAX_VIDEOS} vidéos maximum. H.264 + AAC recommandé. Les vidéos sont envoyées immédiatement ; une suppression prend effet à l'enregistrement.`}
         </p>
       </div>
 
