@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { FilePlus, FileText, Film, ImagePlus, Loader2, Trash2, Zap } from 'lucide-react'
+import { FilePlus, FileText, Film, ImagePlus, Loader2, Mic, Trash2, Zap } from 'lucide-react'
 import { apiDelete, apiErrorMessage, apiPost, apiPut, apiUpload } from '@/lib/api'
 
 export interface Automation {
@@ -14,6 +14,7 @@ export interface Automation {
   /** Legacy single-video field, still present on automations saved before multi-video. */
   videoUrl?: string | null
   documentUrls: string[]
+  audioUrls: string[]
   isActive: boolean
   priority: number
 }
@@ -30,6 +31,12 @@ export const MAX_VIDEOS = 3
 // WhatsApp refuses to play inline video past ~16 Mo
 const MAX_VIDEO_SIZE = 16 * 1024 * 1024
 const VIDEO_ACCEPTED = 'video/mp4'
+
+export const MAX_AUDIOS = 2
+const MAX_AUDIO_SIZE = 16 * 1024 * 1024
+// Extensions first: browsers report audio mimetypes inconsistently, so the
+// picker lists both and the exact type is left for the server to validate
+const AUDIO_ACCEPTED = '.mp3,.ogg,.m4a,.wav,.webm,audio/*'
 
 /** Storage paths are "<timestamp>-<original name>" — recover the readable part. */
 function fileNameFromUrl(url: string): string {
@@ -64,6 +71,8 @@ function toDraft(a: Automation): Draft {
     // A pre-multi-video automation only has the single videoUrl — lift it into the array
     videoUrls: a.videoUrls ?? (a.videoUrl ? [a.videoUrl] : []),
     documentUrls: a.documentUrls ?? [],
+    // Absent on automations created before voice notes existed
+    audioUrls: a.audioUrls ?? [],
     isActive: Boolean(a.isActive),
   }
 }
@@ -82,6 +91,7 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
   const [uploading, setUploading] = useState(false)
   const [uploadingDocs, setUploadingDocs] = useState(false)
   const [uploadingVideo, setUploadingVideo] = useState(false)
+  const [uploadingAudio, setUploadingAudio] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -91,6 +101,7 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
   const fileRef = useRef<HTMLInputElement>(null)
   const docRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLInputElement>(null)
+  const audioRef = useRef<HTMLInputElement>(null)
 
   // An empty id means this card only exists locally: the server rejects an
   // automation without a triggerMessage, so it is POSTed on first save
@@ -99,7 +110,8 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
   const remainingSlots = MAX_PHOTOS - draft.photoUrls.length
   const remainingDocs = MAX_DOCS - draft.documentUrls.length
   const remainingVideos = MAX_VIDEOS - draft.videoUrls.length
-  const busy = uploading || uploadingDocs || uploadingVideo
+  const remainingAudios = MAX_AUDIOS - draft.audioUrls.length
+  const busy = uploading || uploadingDocs || uploadingVideo || uploadingAudio
 
   function set<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft(d => ({ ...d, [key]: value }))
@@ -296,6 +308,57 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
   /** Removal is local — persisted with the next « Enregistrer » (PUT videoUrls). */
   function removeVideo(idx: number) {
     set('videoUrls', draft.videoUrls.filter((_, i) => i !== idx))
+  }
+
+  async function handleAudios(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    if (files.length === 0) return
+
+    if (files.length > remainingAudios) {
+      setError(`${MAX_AUDIOS} notes vocales maximum — il reste ${remainingAudios} emplacement${remainingAudios > 1 ? 's' : ''}.`)
+      return
+    }
+    // Deliberately loose: a .m4a is reported as audio/mp4 by some browsers and
+    // audio/x-m4a by others, so only obvious non-audio files are refused here
+    const wrongType = files.find(f => f.type && !f.type.startsWith('audio/'))
+    if (wrongType) {
+      setError(`« ${wrongType.name} » n'est pas un fichier audio.`)
+      return
+    }
+    const tooBig = files.find(f => f.size > MAX_AUDIO_SIZE)
+    if (tooBig) {
+      setError(`« ${tooBig.name} » dépasse 16 Mo.`)
+      return
+    }
+
+    setUploadingAudio(true)
+    setError(null)
+    try {
+      const formData = new FormData()
+      files.forEach(f => formData.append('audio', f))
+      const res = await apiUpload(`/api/automations/${automation.id}/audio`, formData) as {
+        urls: string[]
+        automation: Automation
+      }
+      const audioUrls = res.automation?.audioUrls ?? [...draft.audioUrls, ...(res.urls ?? [])]
+      const added = audioUrls.slice(draft.audioUrls.length)
+      setSizes(s => ({ ...s, ...Object.fromEntries(added.map((u, i) => [u, files[i]?.size ?? 0])) }))
+      setDraft(d => ({ ...d, audioUrls }))
+      setSaved(s => ({ ...s, audioUrls }))
+      onSaved({ ...automation, audioUrls }, automation.id)
+      onToast(files.length > 1 ? 'Notes vocales ajoutées' : 'Note vocale ajoutée', true)
+    } catch (err) {
+      setError(apiErrorMessage(err, "L'envoi de la note vocale a échoué. Réessayez."))
+      onToast("Erreur lors de l'envoi de la note vocale", false)
+    } finally {
+      setUploadingAudio(false)
+    }
+  }
+
+  /** Removal is local — persisted with the next « Enregistrer » (PUT audioUrls). */
+  function removeAudio(idx: number) {
+    set('audioUrls', draft.audioUrls.filter((_, i) => i !== idx))
   }
 
   return (
@@ -569,6 +632,72 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
         />
         <p className="text-xs text-gray-400 mt-1">Optionnel — laissez vide pour ne rien envoyer.</p>
+      </div>
+
+      {/* Voice notes */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-sm font-medium text-gray-700">Notes vocales (après le Message 3)</label>
+          <span className="text-xs text-gray-400">{draft.audioUrls.length}/{MAX_AUDIOS}</span>
+        </div>
+
+        <div className="space-y-2">
+          {draft.audioUrls.map((url, idx) => (
+            <div key={url + idx} className="flex items-center gap-2.5 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              <Mic className="h-4 w-4 text-emerald-600 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-xs text-gray-500">
+                    Audio {idx + 1} · {fileNameFromUrl(url)}
+                  </span>
+                  {sizes[url] > 0 && <span className="text-xs text-gray-400 shrink-0">{formatSize(sizes[url])}</span>}
+                </div>
+                <audio src={url} controls preload="none" className="w-full h-8 mt-1" />
+              </div>
+              <button
+                type="button"
+                onClick={() => removeAudio(idx)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors shrink-0"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+
+          {remainingAudios > 0 && (
+            <button
+              type="button"
+              onClick={() => audioRef.current?.click()}
+              disabled={uploadingAudio || isNew}
+              title={isNew ? "Créez d'abord l'automatisation" : undefined}
+              className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 py-3 hover:bg-emerald-50 hover:border-emerald-300 disabled:opacity-60 transition-colors"
+            >
+              {uploadingAudio ? (
+                <Loader2 className="h-5 w-5 text-emerald-600 animate-spin" />
+              ) : (
+                <>
+                  <Mic className="h-5 w-5 text-gray-300" />
+                  <span className="text-xs text-gray-400">Ajouter une note vocale</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
+
+        <input
+          ref={audioRef}
+          type="file"
+          multiple
+          accept={AUDIO_ACCEPTED}
+          className="hidden"
+          onChange={handleAudios}
+        />
+
+        <p className="text-xs text-gray-400 mt-1">
+          {isNew
+            ? "Créez d'abord l'automatisation — les notes vocales pourront ensuite être ajoutées."
+            : `MP3 · OGG · M4A · WAV · WebM — max 16 Mo par fichier · ${MAX_AUDIOS} notes vocales maximum. Envoyées après le Message 3, à 5 secondes d'intervalle. Envoyées immédiatement ; une suppression prend effet à l'enregistrement.`}
+        </p>
       </div>
 
       {error && (

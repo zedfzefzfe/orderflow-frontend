@@ -309,6 +309,7 @@ export default function Automation() {
       photoUrls: [],
       videoUrls: [],
       documentUrls: [],
+      audioUrls: [],
       isActive: true,
       priority: list.length,
     }])
