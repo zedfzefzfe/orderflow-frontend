@@ -618,26 +618,10 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
         <p className="text-xs text-gray-400 mt-1">Optionnel — laissez vide pour ne rien envoyer.</p>
       </div>
 
-      {/* Follow-up message 3 */}
-      <div>
-        <div className="flex items-center justify-between mb-1">
-          <label className="text-sm font-medium text-gray-700">Message 3 — question de qualification</label>
-          <span className="text-xs text-gray-400">{draft.message3.length} caractères</span>
-        </div>
-        <textarea
-          value={draft.message3}
-          onChange={e => set('message3', e.target.value)}
-          rows={5}
-          placeholder="Pour quelle pièce cherchez-vous ? Et quelles dimensions ?"
-          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
-        />
-        <p className="text-xs text-gray-400 mt-1">Optionnel — laissez vide pour ne rien envoyer.</p>
-      </div>
-
       {/* Voice notes */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="text-sm font-medium text-gray-700">Notes vocales (après le Message 3)</label>
+          <label className="text-sm font-medium text-gray-700">Notes vocales (entre le Message 2 et le Message 3)</label>
           <span className="text-xs text-gray-400">{draft.audioUrls.length}/{MAX_AUDIOS}</span>
         </div>
 
@@ -696,7 +680,25 @@ export default function AutomationCard({ automation, autoFocus, onSaved, onDelet
         <p className="text-xs text-gray-400 mt-1">
           {isNew
             ? "Créez d'abord l'automatisation — les notes vocales pourront ensuite être ajoutées."
-            : `MP3 · OGG · M4A · WAV · WebM — max 16 Mo par fichier · ${MAX_AUDIOS} notes vocales maximum. Envoyées après le Message 3, à 5 secondes d'intervalle. Envoyées immédiatement ; une suppression prend effet à l'enregistrement.`}
+            : `MP3 · OGG · M4A · WAV · WebM — max 16 Mo par fichier · ${MAX_AUDIOS} notes vocales maximum, à 5 secondes d'intervalle. Envoyées après le Message 2 ; le Message 3 arrive ensuite, en dernier. Envoyées immédiatement ; une suppression prend effet à l'enregistrement.`}
+        </p>
+      </div>
+
+      {/* Follow-up message 3 — sent last, after the voice notes */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-sm font-medium text-gray-700">Message 3 — question de qualification</label>
+          <span className="text-xs text-gray-400">{draft.message3.length} caractères</span>
+        </div>
+        <textarea
+          value={draft.message3}
+          onChange={e => set('message3', e.target.value)}
+          rows={5}
+          placeholder="Pour quelle pièce cherchez-vous ? Et quelles dimensions ?"
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
+        />
+        <p className="text-xs text-gray-400 mt-1">
+          Optionnel — laissez vide pour ne rien envoyer. Envoyé en dernier, après les notes vocales.
         </p>
       </div>
 
